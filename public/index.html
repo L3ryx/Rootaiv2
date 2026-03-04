@@ -6,37 +6,32 @@
 </head>
 <body>
 
-<!-- TOP LEFT BUTTON -->
-<a href="/admin.html" class="top-left-btn">Espace Admin</a>
+<a href="/admin.html" class="top-btn">Admin</a>
 
-<!-- TITLE -->
-<h1 class="title">Ali Search AI</h1>
+<button class="logout-btn" onclick="logout()">
+Logout
+</button>
 
-<!-- LOGIN -->
-<div id="loginSection" class="login-container">
-  <input type="password" id="passwordInput" placeholder="Admin Password" />
-  <button onclick="login()">Login</button>
-</div>
+<h1 class="main-title">Ali Search AI</h1>
 
-<!-- TOOL -->
-<div id="toolSection" style="display:none;" class="tool-container">
+<div class="tool">
 
-  <input type="file" id="imageInput" multiple hidden />
+<input type="file" id="imageInput" multiple />
 
-  <button class="upload-btn" onclick="document.getElementById('imageInput').click()">
-    📤 UPLOAD IMAGES
-  </button>
+<button class="upload-btn" onclick="uploadImages()">
+📤 UPLOAD
+</button>
 
-  <div id="preview"></div>
+<div id="preview"></div>
 
-  <button class="search-btn" onclick="startSearch()">
-    🚀 START SEARCH
-  </button>
+<button class="search-btn" onclick="startSearch()">
+🚀 START SEARCH
+</button>
 
-  <div id="progressContainer"></div>
+<div id="results"></div>
 
 </div>
 
-<script src="/script.js"></script>
+<script src="script.js"></script>
 </body>
 </html>
