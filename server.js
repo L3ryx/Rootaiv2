@@ -1,7 +1,7 @@
 // ======================================================
-// ROOT AI - USER PROVIDED API KEYS VERSION
-// No authentication
-// Keys are sent from frontend
+// AI PRODUCT FINDER - TEMPORARY API KEYS VERSION
+// No key storage
+// Keys sent directly from client
 // ======================================================
 
 const express = require("express");
@@ -9,7 +9,6 @@ const http = require("http");
 const multer = require("multer");
 const axios = require("axios");
 const FormData = require("form-data");
-const path = require("path");
 
 const app = express();
 const server = http.createServer(app);
@@ -58,11 +57,10 @@ app.post("/analyze", upload.single("image"), async (req, res) => {
       );
 
       imageUrl = imgRes.data.data.url;
-
     }
 
     // ==================================================
-    // 2️⃣ OpenAI Vision Analysis
+    // 2️⃣ OpenAI Vision
     // ==================================================
 
     const vision = await axios.post(
@@ -92,7 +90,7 @@ app.post("/analyze", upload.single("image"), async (req, res) => {
       vision.data.choices[0].message.content;
 
     // ==================================================
-    // 3️⃣ SerpAPI Product Search
+    // 3️⃣ SerpAPI Search
     // ==================================================
 
     let products = [];
