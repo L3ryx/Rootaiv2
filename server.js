@@ -1,5 +1,5 @@
 // ======================================================
-// ALI SEARCH AI - SERVER UPDATED WITH AUTO ADMIN
+// ALI SEARCH AI - SECURE VERSION
 // ======================================================
 
 const express = require("express");
@@ -18,12 +18,12 @@ const server = http.createServer(app);
 const PORT = 3000;
 
 const SECRET_KEY = "CHANGE_THIS_SECRET";
-const ADMIN_PASSWORD = "admin123"; // ⚡ Default system password (not used for login)
+const ADMIN_USERNAME = "darkoff";
+const ADMIN_PASSWORD_PLAIN = "Bretigny91";
 
-const CONFIG_PATH = "./config.json";
 const USERS_PATH = "./users.json";
 const SESSIONS_PATH = "./sessions.json";
-const LOG_PATH = "./logs.json";
+const CONFIG_PATH = "./config.json";
 
 // ======================================================
 // UTILS
@@ -39,24 +39,21 @@ function writeJSON(file, data) {
 }
 
 // ======================================================
-// AUTO CREATE ADMIN (darkoff)
+// AUTO CREATE ADMIN
 // ======================================================
 
 async function createDefaultAdmin() {
 
   const users = readJSON(USERS_PATH, []);
 
-  const adminExists = users.find(u => u.username === "darkoff");
+  const exists = users.find(u => u.username === ADMIN_USERNAME);
 
-  if (adminExists) {
-    console.log("✅ Admin already exists");
-    return;
-  }
+  if (exists) return;
 
-  const hash = await bcrypt.hash("Bretigny91", 10);
+  const hash = await bcrypt.hash(ADMIN_PASSWORD_PLAIN, 10);
 
   users.push({
-    username: "darkoff",
+    username: ADMIN_USERNAME,
     password: hash,
     role: "admin",
     createdAt: new Date()
@@ -64,37 +61,49 @@ async function createDefaultAdmin() {
 
   writeJSON(USERS_PATH, users);
 
-  console.log("🚀 Default admin created (darkoff)");
+  console.log("🚀 Default admin created");
 
 }
 
 // ======================================================
-// CONFIG ENCRYPTED
+// MIDDLEWARE AUTH
 // ======================================================
 
-function getConfig() {
-  if (!fs.existsSync(CONFIG_PATH)) return {};
+function authMiddleware(req, res, next) {
 
-  try {
-    const encrypted = fs.readFileSync(CONFIG_PATH, "utf8");
-    const bytes = CryptoJS.AES.decrypt(encrypted, SECRET_KEY);
-    return JSON.parse(bytes.toString(CryptoJS.enc.Utf8) || "{}");
-  } catch {
-    return {};
+  const token = req.headers.authorization;
+
+  if (!token)
+    return res.status(401).json({ error: "No token" });
+
+  const sessions = readJSON(SESSIONS_PATH, []);
+
+  const session = sessions.find(s => s.token === token);
+
+  if (!session)
+    return res.status(401).json({ error: "Invalid session" });
+
+  req.user = session;
+  next();
+}
+
+function adminMiddleware(req, res, next) {
+
+  const token = req.headers.authorization;
+
+  const sessions = readJSON(SESSIONS_PATH, []);
+
+  const session = sessions.find(s => s.token === token);
+
+  if (!session || session.role !== "admin") {
+    return res.status(403).json({ error: "Admin only" });
   }
-}
 
-function saveConfig(config) {
-  const encrypted = CryptoJS.AES.encrypt(
-    JSON.stringify(config),
-    SECRET_KEY
-  ).toString();
-
-  fs.writeFileSync(CONFIG_PATH, encrypted);
+  next();
 }
 
 // ======================================================
-// MIDDLEWARE
+// MIDDLEWARE EXPRESS
 // ======================================================
 
 app.use(express.json());
@@ -115,7 +124,7 @@ const upload = multer({
 app.use("/uploads", express.static(uploadDir));
 
 // ======================================================
-// REGISTER (FORCE ROLE USER)
+// REGISTER (FORCE USER ROLE)
 // ======================================================
 
 app.post("/api/register", async (req, res) => {
@@ -188,7 +197,6 @@ app.post("/api/logout", (req, res) => {
   const { token } = req.body;
 
   let sessions = readJSON(SESSIONS_PATH, []);
-
   sessions = sessions.filter(s => s.token !== token);
 
   writeJSON(SESSIONS_PATH, sessions);
@@ -197,26 +205,29 @@ app.post("/api/logout", (req, res) => {
 });
 
 // ======================================================
-// ADMIN GET USERS
+// PROTECTED ADMIN ROUTE
 // ======================================================
 
-app.get("/api/users", (req, res) => {
+app.get("/api/admin/users", adminMiddleware, (req, res) => {
 
-  const password = req.query.password;
+  const users = readJSON(USERS_PATH, []);
 
-  if (password !== "darkoff")
-    return res.status(403).json({ error: "Unauthorized" });
+  // ❌ Prevent returning password hashes
+  const safeUsers = users.map(u => ({
+    username: u.username,
+    role: u.role,
+    createdAt: u.createdAt
+  }));
 
-  res.json(readJSON(USERS_PATH, []));
+  res.json(safeUsers);
 });
 
 // ======================================================
-// ANALYZE IMAGE
+// ANALYZE
 // ======================================================
 
-app.post("/analyze", upload.array("images"), async (req, res) => {
+app.post("/analyze", authMiddleware, upload.array("images"), async (req, res) => {
 
-  const config = getConfig();
   const results = [];
 
   for (const file of req.files) {
@@ -224,37 +235,9 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
     const publicUrl =
       `${req.protocol}://${req.get("host")}/uploads/${file.filename}`;
 
-    let serpResults = [];
-
-    try {
-
-      const response = await axios.get(
-        "https://serpapi.com/search",
-        {
-          params: {
-            engine: "google_reverse_image",
-            image_url: publicUrl,
-            api_key: config.SERPAPI_KEY
-          }
-        }
-      );
-
-      serpResults = response.data?.image_results || [];
-
-    } catch (err) {
-      console.log("SerpAPI Error:", err.message);
-    }
-
-    const matches = serpResults
-      .filter(r => r.link?.includes("aliexpress.com"))
-      .map(r => ({
-        url: r.link,
-        similarity: 70
-      }));
-
     results.push({
       image: file.filename,
-      matches
+      url: publicUrl
     });
   }
 
@@ -267,7 +250,7 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
 server.listen(PORT, async () => {
 
-  await createDefaultAdmin(); // 🔥 Auto create admin
+  await createDefaultAdmin();
 
   console.log("🚀 Server running on port", PORT);
 });
