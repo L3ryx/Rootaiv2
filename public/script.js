@@ -1,40 +1,61 @@
 // ======================================================
-// AUTH CHECK (RUN ON EVERY PAGE)
+// FORCE AUTH VERIFICATION (SECURITY IMPROVED)
 // ======================================================
 
-const token = localStorage.getItem("token");
-const role = localStorage.getItem("role");
+document.addEventListener("DOMContentLoaded", async () => {
 
-if (!token) {
-  window.location = "/login.html";
-} else {
-  fetch("/api/verify", {
-    method: "GET",
-    headers: {
-      "Authorization": token
-    }
-  })
-  .then(res => {
+  const token = localStorage.getItem("token");
+
+  if (!token) {
+    redirectToLogin();
+    return;
+  }
+
+  try {
+
+    const res = await fetch("/api/verify", {
+      method: "GET",
+      headers: {
+        "Authorization": token
+      }
+    });
+
     if (!res.ok) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("role");
-      window.location = "/login.html";
+
+      // ❌ Token invalide → suppression immédiate
+      localStorage.clear();
+      redirectToLogin();
     }
-  });
+
+  } catch (err) {
+    console.error("Verification error:", err);
+    redirectToLogin();
+  }
+
+});
+
+function redirectToLogin() {
+  if (window.location.pathname !== "/login.html") {
+    window.location = "/login.html";
+  }
 }
 
 // ======================================================
-// LOGOUT
+// LOGOUT SECURE
 // ======================================================
 
-async function logout() {
+async function logout(){
 
-  await fetch("/api/logout", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token })
+  const token = localStorage.getItem("token");
+
+  await fetch("/api/logout",{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json"
+    },
+    body:JSON.stringify({ token })
   });
 
   localStorage.clear();
-  window.location = "/login.html";
+  window.location="/login.html";
 }
