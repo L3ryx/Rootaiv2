@@ -1,32 +1,56 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Admin</title>
+<title>Admin Panel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <style>
-body{margin:0;background:#000;color:white;font-family:Arial;text-align:center;}
-button{
-  padding:10px 20px;
-  margin:20px;
-  background:red;
-  border:none;
+body {
+  background:black;
   color:white;
-  font-weight:bold;
+  font-family:Arial;
+  padding:40px;
+}
+
+input, button {
+  padding:10px;
   border-radius:6px;
+  border:none;
+}
+
+button {
+  background:#00ff88;
   cursor:pointer;
+  font-weight:bold;
 }
 </style>
 </head>
 <body>
 
-<h1>Admin Dashboard</h1>
+<h1>🔐 Admin Dashboard</h1>
 
-<button onclick="back()">Retour Dashboard</button>
+<p>Configurer les clés API :</p>
+
+<input type="text" id="apiKey" placeholder="Enter API Key">
+<br><br>
+
+<button onclick="saveApi()">Save API Key</button>
 
 <script>
-function back(){
-  window.location="/dashboard";
+
+async function saveApi() {
+
+  const key = document.getElementById("apiKey").value;
+
+  await fetch("/api/save-key", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ key })
+  });
+
+  alert("API Key saved !");
 }
+
 </script>
 
 </body>
