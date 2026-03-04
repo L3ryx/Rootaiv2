@@ -1,9 +1,8 @@
 // ======================================================
-// ROOT AI V2 - SECURE HTTP ONLY COOKIE VERSION
+// ROOT AI V2 - FINAL SECURE VERSION
 // ======================================================
 
 const express = require("express");
-const multer = require("multer");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -18,17 +17,14 @@ const PORT = process.env.PORT || 3000;
 
 const USERS_PATH = "./users.json";
 const SESSIONS_PATH = "./sessions.json";
-
-const SESSION_DURATION = 1000 * 60 * 60; // 1h
+const SESSION_DURATION = 1000 * 60 * 60; // 1 heure
 
 // ======================================================
-// EXPRESS CONFIG
+// BASIC CONFIG
 // ======================================================
 
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, "public")));
 
 // ======================================================
 // UTILS
@@ -45,13 +41,11 @@ function writeJSON(file, data) {
 }
 
 // ======================================================
-// CLEAR SESSIONS AT START (IMPORTANT)
+// CLEAR SESSIONS AU DÉMARRAGE
 // ======================================================
 
-if (fs.existsSync(SESSIONS_PATH)) {
-  fs.writeFileSync(SESSIONS_PATH, JSON.stringify([], null, 2));
-  console.log("🧹 Sessions cleared on startup");
-}
+writeJSON(SESSIONS_PATH, []);
+console.log("🧹 Sessions cleared on startup");
 
 // ======================================================
 // CREATE DEFAULT ADMIN
@@ -73,55 +67,75 @@ async function createAdmin() {
 
   writeJSON(USERS_PATH, users);
 
-  console.log("✅ Admin created");
+  console.log("✅ Default admin created");
 }
 
 // ======================================================
-// AUTH MIDDLEWARE
+// AUTH SYSTEM
 // ======================================================
 
-function authMiddleware(req, res, next) {
-
-  const token = req.cookies.session;
-  if (!token) return res.status(401).json({ error: "Not authenticated" });
-
-  let sessions = readJSON(SESSIONS_PATH, []);
+function getSession(token) {
+  const sessions = readJSON(SESSIONS_PATH, []);
   const session = sessions.find(s => s.token === token);
 
-  if (!session)
-    return res.status(401).json({ error: "Invalid session" });
+  if (!session) return null;
 
-  if (Date.now() - session.createdAt > SESSION_DURATION) {
+  if (Date.now() - session.createdAt > SESSION_DURATION)
+    return null;
 
-    sessions = sessions.filter(s => s.token !== token);
-    writeJSON(SESSIONS_PATH, sessions);
+  return session;
+}
 
+function requireAuth(req, res, next) {
+
+  const token = req.cookies.session;
+  const session = getSession(token);
+
+  if (!session) {
     res.clearCookie("session");
-    return res.status(401).json({ error: "Session expired" });
+    return res.redirect("/login");
   }
 
   req.user = session;
   next();
 }
 
-function adminMiddleware(req, res, next) {
+function requireAdmin(req, res, next) {
 
   const token = req.cookies.session;
-  const sessions = readJSON(SESSIONS_PATH, []);
+  const session = getSession(token);
 
-  const session = sessions.find(
-    s => s.token === token && s.role === "admin"
-  );
-
-  if (!session)
-    return res.status(403).json({ error: "Admin only" });
+  if (!session || session.role !== "admin") {
+    res.clearCookie("session");
+    return res.redirect("/login");
+  }
 
   req.user = session;
   next();
 }
 
 // ======================================================
-// LOGIN
+// ROUTES HTML
+// ======================================================
+
+app.get("/", (req, res) => {
+  res.redirect("/login");
+});
+
+app.get("/login", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/login.html"));
+});
+
+app.get("/dashboard", requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, "public/index.html"));
+});
+
+app.get("/admin", requireAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin.html"));
+});
+
+// ======================================================
+// API LOGIN
 // ======================================================
 
 app.post("/api/login", async (req, res) => {
@@ -131,9 +145,10 @@ app.post("/api/login", async (req, res) => {
   const user = users.find(u => u.username === username);
 
   if (!user)
-    return res.status(404).json({ error: "User not found" });
+    return res.status(401).json({ error: "User not found" });
 
   const match = await bcrypt.compare(password, user.password);
+
   if (!match)
     return res.status(401).json({ error: "Wrong password" });
 
@@ -151,24 +166,12 @@ app.post("/api/login", async (req, res) => {
 
   res.cookie("session", token, {
     httpOnly: true,
-    secure: true,        // mettre false en local
+    secure: true,       // false en local
     sameSite: "strict",
     maxAge: SESSION_DURATION
   });
 
   res.json({ success: true });
-});
-
-// ======================================================
-// VERIFY
-// ======================================================
-
-app.get("/api/verify", authMiddleware, (req, res) => {
-  res.json({
-    valid: true,
-    user: req.user.username,
-    role: req.user.role
-  });
 });
 
 // ======================================================
@@ -181,35 +184,20 @@ app.post("/api/logout", (req, res) => {
 
   let sessions = readJSON(SESSIONS_PATH, []);
   sessions = sessions.filter(s => s.token !== token);
+
   writeJSON(SESSIONS_PATH, sessions);
 
   res.clearCookie("session");
+
   res.json({ success: true });
 });
 
 // ======================================================
-// ANALYZE (UPLOAD PROTECTED)
+// STATIC FILES (PAS D'HTML)
 // ======================================================
 
-const uploadDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
-
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: uploadDir,
-    filename: (req, file, cb) =>
-      cb(null, Date.now() + "-" + file.originalname)
-  })
-});
-
-app.post("/analyze", authMiddleware, upload.array("images"), (req, res) => {
-
-  const results = req.files.map(file => ({
-    url: `/uploads/${file.filename}`
-  }));
-
-  res.json({ results });
-});
+app.use("/assets", express.static(path.join(__dirname, "public/assets")));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ======================================================
 // START
