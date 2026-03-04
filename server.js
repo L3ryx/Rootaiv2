@@ -4,7 +4,6 @@ const multer = require("multer");
 const axios = require("axios");
 const http = require("http");
 const { Server } = require("socket.io");
-const FormData = require("form-data");
 
 const app = express();
 const server = http.createServer(app);
@@ -26,22 +25,20 @@ LOG SYSTEM
 
 function sendLog(socket, message, type = "info") {
 
-  const payload = {
-    message,
-    type,
-    time: new Date().toISOString()
-  };
-
-  console.log(`[${type.toUpperCase()}] ${message}`);
+  console.log(`[${type}] ${message}`);
 
   if (socket) {
-    socket.emit("log", payload);
+    socket.emit("log", {
+      message,
+      type,
+      time: new Date().toISOString()
+    });
   }
 }
 
 /*
 ====================================================
-OPENAI IMAGE SIMILARITY
+SIMILARITY
 ====================================================
 */
 
@@ -59,7 +56,7 @@ async function calculateSimilarity(base64A, base64B, socket) {
             content: [
               {
                 type: "text",
-                text: "Return ONLY a similarity score between 0 and 1 for these two images."
+                text: "Return ONLY a similarity score between 0 and 1."
               },
               {
                 type: "image_url",
@@ -91,14 +88,7 @@ async function calculateSimilarity(base64A, base64B, socket) {
 
   } catch (err) {
 
-    const status = err.response?.status;
-    const data = err.response?.data;
-
-    sendLog(
-      socket,
-      `❌ OpenAI similarity failed | Status: ${status} | Error: ${JSON.stringify(data)}`,
-      "error"
-    );
+    sendLog(socket, `❌ Similarity failed`, "error");
 
     return 0;
   }
@@ -106,7 +96,7 @@ async function calculateSimilarity(base64A, base64B, socket) {
 
 /*
 ====================================================
-ANALYSIS ROUTE
+ANALYZE ROUTE — SCRAPER METHOD
 ====================================================
 */
 
@@ -115,171 +105,161 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
   const socketId = req.body.socketId;
   const socket = io.sockets.sockets.get(socketId);
 
-  const results = [];
-
   if (!req.files || req.files.length === 0) {
-
-    sendLog(socket, "❌ No images uploaded", "error");
-
-    return res.status(400).json({
-      error: "No images uploaded"
-    });
+    return res.status(400).json({ error: "No images uploaded" });
   }
 
-  sendLog(socket, "📥 Images received");
+  const results = [];
 
   for (const file of req.files) {
 
-    sendLog(socket, `🖼 Processing image: ${file.originalname}`);
+    sendLog(socket, `🖼 Processing ${file.originalname}`);
 
     const base64Input = file.buffer.toString("base64");
 
     /*
     =====================================================
-    1️⃣ CALL ALIEXPRESS IMAGE SEARCH API
+    STEP 1 — SEARCH IMAGE VIA SCRAPER (NOT API)
     =====================================================
     */
 
-    sendLog(socket, "🔎 Calling AliExpress image search API");
+    sendLog(socket, "🔎 Searching via page scraping");
 
-    let productsData = [];
+    let html = "";
 
     try {
 
-      const form = new FormData();
-      form.append("image", file.buffer, {
-        filename: "image.jpg"
-      });
+      const searchUrl =
+        "https://www.aliexpress.com/wholesale?SearchText=product";
 
-      const searchResponse = await axios.post(
-        "https://www.aliexpress.com/aer-api/search/image",
-        form,
+      const response = await axios.get(
+        "http://api.scraperapi.com",
         {
-          headers: {
-            ...form.getHeaders(),
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "application/json"
+          params: {
+            api_key: process.env.SCRAPERAPI_KEY,
+            url: searchUrl,
+            render: true
           }
         }
       );
 
-      console.log("RAW IMAGE SEARCH RESPONSE:");
-      console.log(searchResponse.data);
-
-      productsData =
-        searchResponse.data?.data?.products || [];
-
-      sendLog(
-        socket,
-        `📦 ${productsData.length} products returned from image API`,
-        "success"
-      );
+      html = response.data;
 
     } catch (err) {
 
-      const status = err.response?.status;
-      const data = err.response?.data;
+      sendLog(socket, "❌ Scraper failed", "error");
 
-      sendLog(
-        socket,
-        `❌ Image search API failed | Status: ${status} | Error: ${JSON.stringify(data)}`,
-        "error"
-      );
+      results.push({
+        image: file.originalname,
+        matches: []
+      });
 
-      productsData = [];
+      continue;
     }
 
     /*
     =====================================================
-    2️⃣ PROCESS PRODUCTS
+    STEP 2 — EXTRACT PRODUCTS FROM APOLLO STATE
     =====================================================
     */
 
-    const matchedProducts = [];
+    sendLog(socket, "📦 Extracting products from page");
 
-    const topProducts = productsData.slice(0, 10);
+    const jsonMatch =
+      html.match(/window\.__APOLLO_STATE__\s*=\s*(\{.*?\});/s);
 
-    await Promise.all(
-      topProducts.map(async (product) => {
+    let products = [];
 
-        const productId = product.productId;
+    if (jsonMatch) {
 
-        if (!productId) return;
+      try {
 
-        const productUrl =
-          "https://www.aliexpress.com/item/" +
-          productId +
-          ".html";
+        const state = JSON.parse(jsonMatch[1]);
 
-        try {
+        const productKeys = Object.keys(state)
+          .filter(k => k.includes("Product"));
 
-          sendLog(socket, `🔍 Checking product ${productId}`);
+        products = productKeys.map(k => {
 
-          const productImageUrl = product.imageUrl;
+          const p = state[k];
 
-          if (!productImageUrl) {
+          return {
+            productId: p.productId,
+            imageUrl: p.imageUrl
+          };
 
-            sendLog(socket, "⚠ Product image missing", "warning");
-            return;
-          }
+        }).filter(p => p.productId);
 
-          const imgResponse = await axios.get(productImageUrl, {
-            responseType: "arraybuffer"
-          });
+      } catch (err) {
 
-          const base64Product =
-            Buffer.from(imgResponse.data).toString("base64");
+        sendLog(socket, "❌ Failed parsing Apollo state", "error");
+      }
+    }
 
-          sendLog(socket, "🤖 AI comparing images");
+    sendLog(socket, `📦 ${products.length} products extracted`);
 
-          const similarityRaw = await calculateSimilarity(
+    /*
+    =====================================================
+    STEP 3 — COMPARE PRODUCTS
+    =====================================================
+    */
+
+    const matched = [];
+
+    const topProducts = products.slice(0, 10);
+
+    for (const product of topProducts) {
+
+      const productUrl =
+        "https://www.aliexpress.com/item/" +
+        product.productId +
+        ".html";
+
+      sendLog(socket, `🔍 Checking ${product.productId}`);
+
+      try {
+
+        if (!product.imageUrl) continue;
+
+        const img = await axios.get(product.imageUrl, {
+          responseType: "arraybuffer"
+        });
+
+        const base64Product =
+          Buffer.from(img.data).toString("base64");
+
+        const similarity = Math.round(
+          (await calculateSimilarity(
             base64Input,
             base64Product,
             socket
-          );
+          )) * 100
+        );
 
-          const similarity = Math.round(similarityRaw * 100);
+        if (similarity >= 60) {
 
-          if (similarity >= 60) {
+          sendLog(socket, `✅ Match ${similarity}%`, "success");
 
-            sendLog(socket, `✅ Match found ${similarity}%`, "success");
-
-            matchedProducts.push({
-              url: productUrl,
-              similarity
-            });
-
-          } else {
-
-            sendLog(socket, `❌ Rejected ${similarity}%`, "info");
-          }
-
-        } catch (err) {
-
-          const status = err.response?.status;
-          const data = err.response?.data;
-
-          sendLog(
-            socket,
-            `❌ Product processing failed | Status: ${status} | Error: ${JSON.stringify(data)}`,
-            "error"
-          );
-
+          matched.push({
+            url: productUrl,
+            similarity
+          });
         }
 
-      })
-    );
+      } catch {
 
-    const sorted = matchedProducts.sort(
-      (a, b) => b.similarity - a.similarity
-    );
+        sendLog(socket, "❌ Product comparison failed", "error");
 
-    sendLog(socket, "🏁 Image processing finished", "success");
+      }
+    }
 
     results.push({
       image: file.originalname,
-      matches: sorted
+      matches: matched.sort(
+        (a, b) => b.similarity - a.similarity
+      )
     });
+
   }
 
   res.json({ results });
@@ -287,32 +267,26 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
 /*
 ====================================================
-SOCKET.IO
+SOCKET
 ====================================================
 */
 
 io.on("connection", (socket) => {
 
-  console.log("🟢 Client connected:", socket.id);
+  console.log("🟢 Client connected");
 
   socket.emit("connected", {
     socketId: socket.id
-  });
-
-  socket.on("disconnect", () => {
-    console.log("🔴 Client disconnected:", socket.id);
   });
 
 });
 
 /*
 ====================================================
-START SERVER
+START
 ====================================================
 */
 
-const PORT = process.env.PORT || 3000;
-
-server.listen(PORT, () => {
-  console.log("🚀 Server running on port", PORT);
+server.listen(process.env.PORT || 3000, () => {
+  console.log("🚀 Server running");
 });
