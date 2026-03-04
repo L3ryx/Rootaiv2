@@ -1,5 +1,5 @@
 // ======================================================
-// ALI SEARCH AI - ULTRA SECURE VERSION
+// ALI SEARCH AI - ULTRA SECURE VERSION (FINAL CLEAN)
 // ======================================================
 
 const express = require("express");
@@ -22,7 +22,7 @@ const ADMIN_PASSWORD_PLAIN = "Bretigny91";
 const USERS_PATH = "./users.json";
 const SESSIONS_PATH = "./sessions.json";
 
-const SESSION_DURATION = 1000 * 60 * 60; // ⏳ 1 heure
+const SESSION_DURATION = 1000 * 60 * 60; // 1 heure
 
 // ======================================================
 // UTILS
@@ -61,8 +61,7 @@ async function createDefaultAdmin() {
 
   writeJSON(USERS_PATH, users);
 
-  console.log("🚀 Default admin created");
-
+  console.log("🚀 Default admin created (darkoff)");
 }
 
 // ======================================================
@@ -75,17 +74,13 @@ function cleanExpiredSessions() {
 
   const now = Date.now();
 
-  const active = sessions.filter(session => {
-
-    return now - session.createdAt < SESSION_DURATION;
-
-  });
+  const active = sessions.filter(session =>
+    now - session.createdAt < SESSION_DURATION
+  );
 
   writeJSON(SESSIONS_PATH, active);
-
 }
 
-// Run cleanup every 10 minutes
 setInterval(cleanExpiredSessions, 600000);
 
 // ======================================================
@@ -150,6 +145,26 @@ const upload = multer({
 });
 
 app.use("/uploads", express.static(uploadDir));
+
+// ======================================================
+// FRONTEND ROUTES (FIX Cannot GET /login)
+// ======================================================
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/index.html"));
+});
+
+app.get("/login", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/login.html"));
+});
+
+app.get("/register", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/register.html"));
+});
+
+app.get("/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin.html"));
+});
 
 // ======================================================
 // REGISTER (FORCE ROLE USER)
