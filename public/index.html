@@ -3,16 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dashboard</title>
+<title>Root AI Dashboard</title>
 
 <style>
+
+/* ================= GLOBAL ================= */
 
 body {
   margin:0;
   background:black;
   color:white;
-  font-family:Arial;
+  font-family:Arial, sans-serif;
 }
+
+/* ================= CONTAINER ================= */
 
 .container {
   height:100vh;
@@ -20,18 +24,27 @@ body {
   flex-direction:column;
   justify-content:center;
   align-items:center;
+  text-align:center;
 }
+
+/* ================= BUTTONS ================= */
 
 button {
   padding:10px 20px;
-  background:#00ff88;
   border:none;
   border-radius:8px;
   font-weight:bold;
   cursor:pointer;
 }
 
-.logout {
+/* Upload button */
+.upload-btn {
+  background:#00ff88;
+  color:black;
+}
+
+/* Logout */
+.logout-btn {
   position:fixed;
   top:20px;
   right:20px;
@@ -39,30 +52,161 @@ button {
   color:white;
 }
 
+/* Admin button */
+.admin-btn {
+  position:fixed;
+  top:20px;
+  left:20px;
+  background:#ffcc00;
+  color:black;
+  z-index:9999;
+}
+
+/* ================= POPUP ================= */
+
+.popup {
+  display:none;
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%, -50%);
+  background:#111;
+  padding:30px;
+  border-radius:12px;
+  border:2px solid #00ff88;
+  z-index:10000;
+}
+
+.popup input {
+  padding:8px;
+  margin:8px 0;
+  border-radius:6px;
+  border:none;
+  width:200px;
+}
+
+/* Overlay */
+
+.overlay {
+  display:none;
+  position:fixed;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  background:rgba(0,0,0,0.6);
+  z-index:9999;
+}
+
 </style>
 </head>
 <body>
 
-<button class="logout" onclick="logout()">Logout</button>
+<!-- ================= ADMIN BUTTON ================= -->
+
+<button class="admin-btn" onclick="openAdminLogin()">
+Admin
+</button>
+
+<!-- ================= LOGOUT ================= -->
+
+<button class="logout-btn" onclick="logout()">
+Logout
+</button>
+
+<!-- ================= POPUP OVERLAY ================= -->
+
+<div class="overlay" id="overlay" onclick="closeAdminLogin()"></div>
+
+<!-- ================= ADMIN LOGIN POPUP ================= -->
+
+<div class="popup" id="adminPopup">
+
+<h3>Admin Login</h3>
+
+<input type="text" id="adminUser" placeholder="Username">
+<br>
+<input type="password" id="adminPass" placeholder="Password">
+<br>
+
+<button class="upload-btn" onclick="loginAdmin()">
+Login
+</button>
+
+<button onclick="closeAdminLogin()" style="background:red;color:white;">
+Cancel
+</button>
+
+</div>
+
+<!-- ================= MAIN CONTENT ================= -->
 
 <div class="container">
 
-<h1>User Dashboard</h1>
+<h1>Root AI V2</h1>
+<p>Upload images to analyze</p>
 
-<input type="file" multiple id="fileInput">
+<input type="file" id="fileInput" multiple>
 <br><br>
 
-<button onclick="upload()">Lancer</button>
+<button class="upload-btn" onclick="upload()">
+Lancer
+</button>
 
+<br>
 <div id="result"></div>
 
 </div>
 
+<!-- ================= SCRIPT ================= -->
+
 <script>
+
+/* ================= ADMIN POPUP ================= */
+
+function openAdminLogin() {
+  document.getElementById("adminPopup").style.display = "block";
+  document.getElementById("overlay").style.display = "block";
+}
+
+function closeAdminLogin() {
+  document.getElementById("adminPopup").style.display = "none";
+  document.getElementById("overlay").style.display = "none";
+}
+
+/* ================= ADMIN LOGIN ================= */
+
+async function loginAdmin() {
+
+  const username = document.getElementById("adminUser").value;
+  const password = document.getElementById("adminPass").value;
+
+  const res = await fetch("/api/login", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ username, password })
+  });
+
+  const data = await res.json();
+
+  if (data.success) {
+    window.location.href = "/admin";
+  } else {
+    alert("Login failed");
+  }
+}
+
+/* ================= UPLOAD ================= */
 
 async function upload() {
 
   const input = document.getElementById("fileInput");
+
+  if (!input.files.length) {
+    alert("Select file first");
+    return;
+  }
+
   const formData = new FormData();
 
   for (let file of input.files) {
@@ -77,13 +221,16 @@ async function upload() {
   const data = await res.json();
 
   document.getElementById("result").innerHTML =
-  "<pre>" + JSON.stringify(data, null, 2) + "</pre>";
+    "<pre>" + JSON.stringify(data, null, 2) + "</pre>";
 }
+
+/* ================= LOGOUT ================= */
 
 async function logout() {
 
   await fetch("/api/logout", { method:"POST" });
-  window.location.href="/login.html";
+
+  window.location.href = "/login.html";
 }
 
 </script>
