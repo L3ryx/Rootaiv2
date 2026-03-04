@@ -1,9 +1,29 @@
 const token = localStorage.getItem("token");
-if (!token) window.location = "/login.html";
+const role = localStorage.getItem("role");
+
+if (!token) {
+  window.location = "/login";
+}
+
+// ==============================
+// ADMIN BUTTON
+// ==============================
+
+const adminBtn = document.getElementById("adminBtn");
+
+if (role === "admin") {
+  adminBtn.style.display = "block";
+  adminBtn.onclick = () => window.location = "/admin";
+}
+
+// ==============================
+// IMAGE UPLOAD
+// ==============================
 
 let files = [];
 
 document.getElementById("imageInput").addEventListener("change", e => {
+
   files = Array.from(e.target.files);
 
   const preview = document.getElementById("preview");
@@ -12,22 +32,17 @@ document.getElementById("imageInput").addEventListener("change", e => {
   files.forEach(file => {
     const img = document.createElement("img");
     img.src = URL.createObjectURL(file);
-    img.className = "preview-img";
+    img.width = 200;
     preview.appendChild(img);
   });
 
 });
 
 async function uploadImages() {
-  alert("Images ready");
-}
-
-async function startSearch() {
 
   const formData = new FormData();
 
   files.forEach(f => formData.append("images", f));
-  formData.append("token", token);
 
   const res = await fetch("/analyze", {
     method: "POST",
@@ -40,6 +55,10 @@ async function startSearch() {
     JSON.stringify(data, null, 2);
 }
 
+// ==============================
+// LOGOUT
+// ==============================
+
 async function logout() {
 
   await fetch("/api/logout", {
@@ -48,6 +67,6 @@ async function logout() {
     body: JSON.stringify({ token })
   });
 
-  localStorage.removeItem("token");
-  window.location = "/login.html";
+  localStorage.clear();
+  window.location = "/login";
 }
