@@ -1,100 +1,98 @@
 const express = require("express");
 const multer = require("multer");
-const axios = require("axios");
-const FormData = require("form-data");
-require("dotenv").config();
+const puppeteer = require("puppeteer");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.static("public"));
-app.use(express.json());
 
-/*
-========================================
-MULTER CONFIG
-========================================
-*/
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-/*
-========================================
-ROUTE: IMAGE ANALYSIS
-========================================
-*/
 app.post("/analyze", upload.array("images"), async (req, res) => {
-  try {
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ error: "No images uploaded" });
-    }
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ error: "No images uploaded" });
+  }
 
-    const results = [];
+  const results = [];
 
-    // Traiter les images une par une (async séquentiel)
-    for (const file of req.files) {
-      console.log(`Processing image: ${file.originalname}`);
+  const browser = await puppeteer.launch({
+    headless: "new",
+    args: ["--no-sandbox", "--disable-setuid-sandbox"]
+  });
 
-      try {
-        /*
-        IMPORTANT:
-        Zenserp nécessite une image accessible publiquement pour la recherche reverse.
-        Ici nous simulons une recherche via Google Images en utilisant un upload temporaire
-        ou base64 selon le plan Zenserp.
-        
-        Si Zenserp demande une URL publique :
-        -> Il faudra uploader l'image vers un service comme Cloudinary
-        -> Puis envoyer l'URL publique à Zenserp
-        */
+  for (const file of req.files) {
+    const page = await browser.newPage();
 
-        // Exemple recherche Google Images via Zenserp
-        const response = await axios.get("https://app.zenserp.com/api/v2/search", {
-          params: {
-            apikey: process.env.ZENSERP_API_KEY,
-            q: "site:aliexpress.com",
-            tbm: "isch"
+    try {
+      console.log("Processing:", file.originalname);
+
+      const tempPath = path.join(os.tmpdir(), file.originalname);
+      fs.writeFileSync(tempPath, file.buffer);
+
+      await page.goto("https://www.aliexpress.com/", {
+        waitUntil: "networkidle2"
+      });
+
+      // Attendre champ upload
+      await page.waitForSelector('input[type="file"]', { timeout: 15000 });
+
+      const inputUploadHandle = await page.$('input[type="file"]');
+      await inputUploadHandle.uploadFile(tempPath);
+
+      // Attendre résultats
+      await page.waitForTimeout(6000);
+
+      const products = await page.evaluate(() => {
+        const items = [];
+        const links = document.querySelectorAll("a[href*='/item/']");
+
+        links.forEach(el => {
+          const title = el.innerText;
+          const url = el.href;
+          const img = el.querySelector("img")?.src || null;
+
+          if (title && url) {
+            items.push({
+              title,
+              url,
+              image: img
+            });
           }
         });
 
-        const data = response.data;
+        return items.slice(0, 10);
+      });
 
-        // Extraire uniquement les liens contenant aliexpress.com
-        const aliexpressLinks = [];
+      results.push({
+        imageName: file.originalname,
+        products
+      });
 
-        if (data.organic) {
-          data.organic.forEach(result => {
-            if (result.link && result.link.includes("aliexpress.com")) {
-              aliexpressLinks.push(result.link);
-            }
-          });
-        }
+      await page.close();
+      fs.unlinkSync(tempPath);
 
-        results.push({
-          imageName: file.originalname,
-          aliexpressLinks
-        });
+    } catch (err) {
+      console.error(err);
 
-      } catch (err) {
-        results.push({
-          imageName: file.originalname,
-          error: "Error processing this image"
-        });
-      }
+      results.push({
+        imageName: file.originalname,
+        error: "Search failed (captcha or block)"
+      });
+
+      await page.close();
     }
-
-    res.json({ results });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Server error" });
   }
+
+  await browser.close();
+
+  res.json({ results });
 });
 
-/*
-========================================
-START SERVER
-========================================
-*/
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log("Server running on port", PORT);
 });
