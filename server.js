@@ -1,16 +1,17 @@
 // ======================================================
-// ROOT AI V2 - FINAL PRODUCTION SECURE VERSION
+// ROOTAIV2 - FINAL STABLE VERSION
+// Fix: bcrypt replaced with bcryptjs (removes vulnerabilities)
 // ======================================================
 
 const express = require("express");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const cookieParser = require("cookie-parser");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const bcrypt = require("bcryptjs"); // ✅ Secure replacement
 
 const app = express();
 const server = http.createServer(app);
@@ -19,32 +20,33 @@ const PORT = process.env.PORT || 3000;
 
 const USERS_PATH = "./users.json";
 const SESSIONS_PATH = "./sessions.json";
-const SESSION_DURATION = 1000 * 60 * 60; // 1h
+const SESSION_DURATION = 1000 * 60 * 60; // 1 hour
 
 // ======================================================
-// SECURITY MIDDLEWARES
+// SECURITY MIDDLEWARE
 // ======================================================
 
 app.use(helmet());
-
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false
+  max: 100
 }));
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // ======================================================
-// UTILS
+// UTIL FUNCTIONS
 // ======================================================
 
 function readJSON(file, fallback) {
   if (!fs.existsSync(file)) return fallback;
-  try { return JSON.parse(fs.readFileSync(file)); }
-  catch { return fallback; }
+  try {
+    return JSON.parse(fs.readFileSync(file));
+  } catch {
+    return fallback;
+  }
 }
 
 function writeJSON(file, data) {
@@ -56,7 +58,7 @@ function writeJSON(file, data) {
 // ======================================================
 
 writeJSON(SESSIONS_PATH, []);
-console.log("🧹 Sessions cleared on startup");
+console.log("🧹 Sessions cleared");
 
 // ======================================================
 // CREATE DEFAULT ADMIN
@@ -68,7 +70,7 @@ async function createAdmin() {
 
   if (users.find(u => u.username === "darkoff")) return;
 
-  const hash = await bcrypt.hash("Bretigny91", 12);
+  const hash = await bcrypt.hash("Bretigny91", 10);
 
   users.push({
     username: "darkoff",
@@ -82,7 +84,7 @@ async function createAdmin() {
 }
 
 // ======================================================
-// SESSION MANAGEMENT
+// AUTH SYSTEM
 // ======================================================
 
 function getSession(token) {
@@ -129,7 +131,7 @@ function requireAdmin(req, res, next) {
 }
 
 // ======================================================
-// ROUTES HTML PROTECTED
+// ROUTES
 // ======================================================
 
 app.get("/", (req, res) => {
@@ -156,9 +158,6 @@ app.post("/api/login", async (req, res) => {
 
   const { username, password } = req.body;
 
-  if (!username || !password)
-    return res.status(400).json({ error: "Missing credentials" });
-
   const users = readJSON(USERS_PATH, []);
   const user = users.find(u => u.username === username);
 
@@ -184,7 +183,7 @@ app.post("/api/login", async (req, res) => {
 
   res.cookie("session", token, {
     httpOnly: true,
-    secure: true,          // mettre false si test en local HTTP
+    secure: true,
     sameSite: "strict",
     maxAge: SESSION_DURATION
   });
@@ -211,11 +210,11 @@ app.post("/api/logout", (req, res) => {
 });
 
 // ======================================================
-// STATIC FILES (NO DIRECT HTML ACCESS)
+// STATIC FILES
 // ======================================================
 
-app.use("/assets", express.static(path.join(__dirname, "public/assets")));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/assets", express.static(path.join(__dirname, "public/assets")));
 
 // ======================================================
 // START SERVER
