@@ -1,198 +1,133 @@
-// ======================================================
-// ALI SEARCH AI
-// SERVER VERSION PRO FINAL
-// ======================================================
+// =============================
+// SERVER.JS — SERPAPI VERSION
+// =============================
 
+require("dotenv").config();
 const express = require("express");
 const multer = require("multer");
 const axios = require("axios");
 const http = require("http");
 const { Server } = require("socket.io");
-const fs = require("fs");
-const path = require("path");
-const bcrypt = require("bcrypt");
-const CryptoJS = require("crypto-js");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-const PORT = 3000;
-
-const CONFIG_PATH = "./config.json";
-const LOG_PATH = "./logs.json";
-
-const SECRET_KEY = "CHANGE_THIS_SECRET_KEY";
-
-const ADMIN_PASSWORD = "admin123"; // 🔐 CHANGE THIS
-
-// ======================================================
-// CONFIG SYSTEM (ENCRYPTED)
-// ======================================================
-
-function getConfig() {
-
-  if (!fs.existsSync(CONFIG_PATH)) return {};
-
-  const encrypted = fs.readFileSync(CONFIG_PATH, "utf8");
-  if (!encrypted) return {};
-
-  try {
-
-    const bytes = CryptoJS.AES.decrypt(encrypted, SECRET_KEY);
-    const decrypted = bytes.toString(CryptoJS.enc.Utf8);
-
-    return JSON.parse(decrypted || "{}");
-
-  } catch (err) {
-    return {};
-  }
-}
-
-function saveConfig(config) {
-
-  const encrypted = CryptoJS.AES.encrypt(
-    JSON.stringify(config),
-    SECRET_KEY
-  ).toString();
-
-  fs.writeFileSync(CONFIG_PATH, encrypted);
-}
-
-// ======================================================
-// LOG SYSTEM
-// ======================================================
-
-function saveLog(message) {
-
-  let logs = [];
-
-  if (fs.existsSync(LOG_PATH)) {
-    logs = JSON.parse(fs.readFileSync(LOG_PATH));
-  }
-
-  logs.push({
-    message,
-    time: new Date()
-  });
-
-  fs.writeFileSync(LOG_PATH, JSON.stringify(logs, null, 2));
-}
-
-// ======================================================
-// MIDDLEWARE
-// ======================================================
+const upload = multer({
+  storage: multer.memoryStorage()
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-const uploadDir = path.join(__dirname, "uploads");
-
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
-
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: uploadDir,
-    filename: (req, file, cb) => {
-      cb(null, Date.now() + "-" + file.originalname);
-    }
-  })
-});
-
-app.use("/uploads", express.static(uploadDir));
 app.use(express.static("public"));
 
-// ======================================================
-// ADMIN LOGIN
-// ======================================================
+/*
+====================================================
+LOG SYSTEM
+====================================================
+*/
 
-app.post("/admin/login", async (req, res) => {
+function sendLog(socket, message, type = "info") {
 
-  const { password } = req.body;
+  console.log(`[${type.toUpperCase()}] ${message}`);
 
-  const match = await bcrypt.compare(
-    password,
-    bcrypt.hashSync(ADMIN_PASSWORD, 10)
-  );
-
-  if (!match) {
-    return res.status(401).json({ error: "Unauthorized" });
+  if (socket) {
+    socket.emit("log", {
+      message,
+      type,
+      time: new Date().toISOString()
+    });
   }
+}
 
-  res.json({ success: true });
+/*
+====================================================
+SIMILARITY WITH OPENAI
+====================================================
+*/
 
-});
+async function calculateSimilarity(base64A, base64B, socket) {
 
-// ======================================================
-// CONFIG ROUTES (PROTECTED)
-// ======================================================
+  try {
 
-app.get("/api/config", (req, res) => {
+    const response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Return ONLY a similarity score between 0 and 1."
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${base64A}`
+                }
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${base64B}`
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+        }
+      }
+    );
 
-  const password = req.query.password;
+    const text = response.data.choices[0].message.content;
+    const match = text.match(/0\.\d+|1(\.0+)?/);
 
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(403).json({ error: "Unauthorized" });
+    return match ? parseFloat(match[0]) : 0;
+
+  } catch (err) {
+
+    sendLog(socket, `❌ Similarity failed`, "error");
+
+    return 0;
   }
+}
 
-  res.json(getConfig());
-
-});
-
-app.post("/api/config", (req, res) => {
-
-  const { password, config } = req.body;
-
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(403).json({ error: "Unauthorized" });
-  }
-
-  saveConfig(config);
-
-  res.json({ success: true });
-
-});
-
-// ======================================================
-// LOG ROUTE
-// ======================================================
-
-app.get("/api/logs", (req, res) => {
-
-  const password = req.query.password;
-
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(403).json({ error: "Unauthorized" });
-  }
-
-  if (!fs.existsSync(LOG_PATH)) {
-    return res.json([]);
-  }
-
-  const logs = JSON.parse(fs.readFileSync(LOG_PATH));
-
-  res.json(logs);
-
-});
-
-// ======================================================
-// ANALYZE ROUTE
-// ======================================================
+/*
+====================================================
+ANALYZE ROUTE
+====================================================
+*/
 
 app.post("/analyze", upload.array("images"), async (req, res) => {
 
-  const config = getConfig();
+  const socketId = req.body.socketId;
+  const socket = io.sockets.sockets.get(socketId);
+
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ error: "No images uploaded" });
+  }
 
   const results = [];
 
   for (const file of req.files) {
 
-    const publicUrl =
-      `${req.protocol}://${req.get("host")}/uploads/${file.filename}`;
+    sendLog(socket, `🖼 Processing ${file.originalname}`);
 
-    saveLog("Analyzing image: " + file.filename);
+    const base64Input = file.buffer.toString("base64");
+
+    /*
+    =====================================================
+    STEP 1 — SERPAPI REVERSE IMAGE SEARCH
+    =====================================================
+    */
+
+    sendLog(socket, "🔎 Calling SerpAPI");
 
     let serpResults = [];
 
@@ -203,57 +138,130 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
         {
           params: {
             engine: "google_reverse_image",
-            image_url: publicUrl,
-            api_key: config.SERPAPI_KEY
+            image_url: `data:image/jpeg;base64,${base64Input}`,
+            api_key: process.env.SERPAPI_KEY
           }
         }
       );
 
       serpResults = response.data?.image_results || [];
 
-      saveLog("SerpAPI returned " + serpResults.length + " results");
+      sendLog(socket, `📦 ${serpResults.length} Google results found`, "success");
 
     } catch (err) {
 
-      saveLog("SerpAPI error: " + err.message);
+      sendLog(
+        socket,
+        `❌ SerpAPI error | ${err.response?.status} | ${err.message}`,
+        "error"
+      );
 
-      serpResults = [];
+      results.push({
+        image: file.originalname,
+        matches: []
+      });
 
+      continue;
     }
 
-    const matches = serpResults
-      .filter(r => r.link?.includes("aliexpress.com"))
-      .slice(0, 5)
-      .map(r => ({
-        url: r.link,
-        similarity: 70
-      }));
+    /*
+    =====================================================
+    STEP 2 — FILTER ALIEXPRESS LINKS
+    =====================================================
+    */
+
+    const aliexpressLinks = serpResults
+      .filter(r => r.link && r.link.includes("aliexpress.com"))
+      .slice(0, 10);
+
+    sendLog(socket, `🛒 ${aliexpressLinks.length} AliExpress links filtered`);
+
+    /*
+    =====================================================
+    STEP 3 — DOWNLOAD PRODUCT IMAGE + COMPARE
+    =====================================================
+    */
+
+    const matches = [];
+
+    for (const item of aliexpressLinks) {
+
+      sendLog(socket, `🔍 Checking ${item.link}`);
+
+      try {
+
+        if (!item.thumbnail) continue;
+
+        const imgResponse = await axios.get(item.thumbnail, {
+          responseType: "arraybuffer"
+        });
+
+        const base64Product =
+          Buffer.from(imgResponse.data).toString("base64");
+
+        const similarity = Math.round(
+          (await calculateSimilarity(
+            base64Input,
+            base64Product,
+            socket
+          )) * 100
+        );
+
+        if (similarity >= 60) {
+
+          sendLog(socket, `✅ Match ${similarity}%`, "success");
+
+          matches.push({
+            url: item.link,
+            similarity
+          });
+
+        } else {
+
+          sendLog(socket, `❌ Rejected ${similarity}%`, "info");
+        }
+
+      } catch (err) {
+
+        sendLog(
+          socket,
+          `❌ Product image failed | ${err.message}`,
+          "error"
+        );
+      }
+    }
 
     results.push({
-      image: file.filename,
-      publicUrl,
-      matches
+      image: file.originalname,
+      matches: matches.sort((a, b) => b.similarity - a.similarity)
     });
-
   }
 
   res.json({ results });
-
 });
 
-// ======================================================
-// SOCKET
-// ======================================================
+/*
+====================================================
+SOCKET.IO
+====================================================
+*/
 
 io.on("connection", (socket) => {
-  socket.emit("connected", { socketId: socket.id });
+
   console.log("🟢 Client connected");
+
+  socket.emit("connected", {
+    socketId: socket.id
+  });
+
 });
 
-// ======================================================
-// START SERVER
-// ======================================================
+/*
+====================================================
+START SERVER
+====================================================
+*/
 
-server.listen(PORT, () => {
-  console.log("🚀 Server running on port " + PORT);
+server.listen(process.env.PORT || 3000, () => {
+  console.log("🚀 Server running");
 });
