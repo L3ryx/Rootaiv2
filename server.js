@@ -1,7 +1,6 @@
 // ===============================
-// SERVER.JS — FULL VERSION
-// API KEYS STORED IN CONFIG.JSON
-// ADMIN PROTECTED
+// ALI SEARCH AI SERVER
+// PRO VERSION
 // ===============================
 
 const express = require("express");
@@ -11,32 +10,54 @@ const http = require("http");
 const { Server } = require("socket.io");
 const fs = require("fs");
 const path = require("path");
+const bcrypt = require("bcrypt");
+const CryptoJS = require("crypto-js");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
 const CONFIG_PATH = "./config.json";
-const ADMIN_PASSWORD = "123456"; // 🔐 CHANGE THIS
+const uploadDir = path.join(__dirname, "uploads");
+
+const SECRET_ENCRYPT_KEY = "SUPER_SECRET_KEY_CHANGE_IT";
+
+const ADMIN_HASH_PASSWORD =
+  bcrypt.hashSync("admin123", 10); // 🔐 CHANGE PASSWORD HERE
 
 /* ===============================
-   CONFIG SYSTEM
+   CONFIG SYSTEM WITH ENCRYPTION
 ================================*/
 
 function getConfig() {
   if (!fs.existsSync(CONFIG_PATH)) return {};
-  return JSON.parse(fs.readFileSync(CONFIG_PATH));
+
+  const encrypted = fs.readFileSync(CONFIG_PATH, "utf8");
+  if (!encrypted) return {};
+
+  const bytes = CryptoJS.AES.decrypt(
+    encrypted,
+    SECRET_ENCRYPT_KEY
+  );
+
+  const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+
+  return JSON.parse(decrypted || "{}");
 }
 
-function saveConfig(data) {
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2));
+function saveConfig(config) {
+
+  const encrypted = CryptoJS.AES.encrypt(
+    JSON.stringify(config),
+    SECRET_ENCRYPT_KEY
+  ).toString();
+
+  fs.writeFileSync(CONFIG_PATH, encrypted);
 }
 
 /* ===============================
-   FILE UPLOAD
+   FILE STORAGE
 ================================*/
-
-const uploadDir = path.join(__dirname, "uploads");
 
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
@@ -57,57 +78,41 @@ app.use("/uploads", express.static(uploadDir));
 app.use(express.static("public"));
 
 /* ===============================
-   LOG SYSTEM
+   LOGIN ROUTE
 ================================*/
 
-function sendLog(socket, message, type = "info") {
-  console.log(`[${type}] ${message}`);
-  if (socket) {
-    socket.emit("log", {
-      message,
-      type,
-      time: new Date().toISOString()
-    });
+app.post("/admin/login", async (req, res) => {
+
+  const { password } = req.body;
+
+  const match = await bcrypt.compare(
+    password,
+    ADMIN_HASH_PASSWORD
+  );
+
+  if (!match) {
+    return res.status(401).json({ error: "Wrong password" });
   }
-}
+
+  res.json({ success: true });
+});
 
 /* ===============================
-   ADMIN ROUTES (PROTECTED)
+   ADMIN CONFIG ROUTES
 ================================*/
-
-app.get("/admin", (req, res) => {
-
-  const password = req.query.password;
-
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(403).send("Unauthorized");
-  }
-
-  res.sendFile(path.join(__dirname, "public/admin.html"));
-});
 
 app.get("/api/config", (req, res) => {
 
-  const password = req.query.password;
+  const config = getConfig();
+  res.json(config);
 
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(403).json({ error: "Unauthorized" });
-  }
-
-  res.json(getConfig());
 });
 
 app.post("/api/config", (req, res) => {
 
-  const { password, config } = req.body;
-
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(403).json({ error: "Unauthorized" });
-  }
-
-  saveConfig(config);
-
+  saveConfig(req.body);
   res.json({ success: true });
+
 });
 
 /* ===============================
@@ -116,25 +121,13 @@ app.post("/api/config", (req, res) => {
 
 app.post("/analyze", upload.array("images"), async (req, res) => {
 
-  const socket = io.sockets.sockets.get(req.body.socketId);
   const config = getConfig();
-
   const results = [];
 
   for (const file of req.files) {
 
-    sendLog(socket, `🖼 Processing ${file.filename}`);
-
     const publicUrl =
       `${req.protocol}://${req.get("host")}/uploads/${file.filename}`;
-
-    sendLog(socket, `🌍 Image URL: ${publicUrl}`);
-
-    /* ============================
-       SERPAPI CALL
-    ============================*/
-
-    sendLog(socket, "🔎 Calling SerpAPI");
 
     let serpResults = [];
 
@@ -153,20 +146,13 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
       serpResults = response.data?.image_results || [];
 
-      sendLog(socket, `📦 ${serpResults.length} results found`);
-
     } catch (err) {
-
-      sendLog(socket,
-        `❌ SerpAPI error | ${err.response?.status || ""}`,
-        "error"
-      );
-
+      serpResults = [];
     }
 
     const matches = serpResults
       .filter(r => r.link?.includes("aliexpress.com"))
-      .slice(0, 10)
+      .slice(0, 5)
       .map(r => ({
         url: r.link,
         similarity: 70
@@ -174,12 +160,12 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
     results.push({
       image: file.filename,
-      publicUrl,
       matches
     });
   }
 
   res.json({ results });
+
 });
 
 /* ===============================
@@ -187,14 +173,13 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 ================================*/
 
 io.on("connection", (socket) => {
-  console.log("🟢 Client connected");
   socket.emit("connected", { socketId: socket.id });
 });
 
 /* ===============================
-   START SERVER
+   START
 ================================*/
 
 server.listen(3000, () => {
-  console.log("🚀 Server running on port 3000");
+  console.log("🚀 Ali Search AI Running");
 });
