@@ -1,6 +1,20 @@
-// ========================================
+// ======================================================
+// ALI SEARCH AI - SCRIPT.JS
+// PRO VERSION
+// ======================================================
+
+// ===============================
+// ELEMENTS
+// ===============================
+
+const form = document.getElementById("uploadForm");
+const logsDiv = document.getElementById("logs");
+const resultsDiv = document.getElementById("results");
+const loadingBar = document.querySelector(".loading-bar");
+
+// ===============================
 // SOCKET CONNECTION
-// ========================================
+// ===============================
 
 const socket = io();
 let socketId = null;
@@ -10,50 +24,71 @@ socket.on("connected", (data) => {
   console.log("🟢 Socket connected:", socketId);
 });
 
-// ========================================
+// ===============================
 // LIVE LOGS
-// ========================================
+// ===============================
 
 socket.on("log", (data) => {
 
-  const logsDiv = document.getElementById("logs");
-
   const line = document.createElement("div");
 
-  line.className = `log-${data.type}`;
-
   line.innerHTML = `
-    <span style="color:#888">
-      [${new Date(data.time).toLocaleTimeString()}]
+    <span style="color:gray">[${new Date(data.time).toLocaleTimeString()}]</span>
+    <span class="log-${data.type}">
+      ${data.message}
     </span>
-    ${data.message}
   `;
 
   logsDiv.appendChild(line);
-
   logsDiv.scrollTop = logsDiv.scrollHeight;
+
 });
 
-// ========================================
-// FORM SUBMISSION
-// ========================================
+// ===============================
+// LOADING BAR ANIMATION
+// ===============================
 
-const form = document.getElementById("uploadForm");
-const resultsContainer = document.getElementById("results");
+function startLoading() {
+  loadingBar.style.width = "0%";
+
+  let progress = 0;
+
+  const interval = setInterval(() => {
+
+    progress += 10;
+
+    if (progress >= 90) {
+      clearInterval(interval);
+    }
+
+    loadingBar.style.width = progress + "%";
+
+  }, 300);
+}
+
+function stopLoading() {
+  loadingBar.style.width = "100%";
+
+  setTimeout(() => {
+    loadingBar.style.width = "0%";
+  }, 500);
+}
+
+// ===============================
+// FORM SUBMIT
+// ===============================
 
 form.addEventListener("submit", async (e) => {
 
   e.preventDefault();
 
-  resultsContainer.innerHTML = "";
-  document.getElementById("logs").innerHTML =
-    "<p>🚀 Starting analysis...</p>";
+  logsDiv.innerHTML = "";
+  resultsDiv.innerHTML = "";
 
-  const filesInput = document.querySelector("input[type='file']");
-  const files = filesInput.files;
+  const files = document.querySelector("input[type=file]").files;
 
-  if (!files || files.length === 0) {
-    alert("Please upload at least one image");
+  if (!files.length) {
+    alert("Please select images");
     return;
   }
 
@@ -64,6 +99,8 @@ form.addEventListener("submit", async (e) => {
   }
 
   formData.append("socketId", socketId);
+
+  startLoading();
 
   try {
 
@@ -78,24 +115,31 @@ form.addEventListener("submit", async (e) => {
 
   } catch (err) {
 
-    console.error("❌ Request failed:", err);
+    logsDiv.innerHTML += `
+      <div style="color:red">
+        ❌ Request failed
+      </div>
+    `;
 
   }
 
+  stopLoading();
+
 });
 
-// ========================================
+// ===============================
 // DISPLAY RESULTS
-// ========================================
+// ===============================
 
 function displayResults(results) {
 
-  const resultsContainer = document.getElementById("results");
-
   if (!results || results.length === 0) {
 
-    resultsContainer.innerHTML =
-      "<p style='color:red'>❌ No results returned</p>";
+    resultsDiv.innerHTML = `
+      <h3 style="color:red">
+        ❌ No results found
+      </h3>
+    `;
 
     return;
   }
@@ -113,7 +157,7 @@ function displayResults(results) {
 
       html += `
         <p style="color:red">
-          ❌ No match found (≥60%)
+          ❌ No AliExpress match ≥60%
         </p>
       `;
 
@@ -129,13 +173,13 @@ function displayResults(results) {
             </a>
           </div>
         `;
-
       });
 
     }
 
     card.innerHTML = html;
-    resultsContainer.appendChild(card);
+    resultsDiv.appendChild(card);
 
   });
+
 }
