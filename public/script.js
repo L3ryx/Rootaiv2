@@ -1,28 +1,59 @@
 // ======================================================
-// ALI SEARCH AI - SCRIPT.JS
-// PRO VERSION
+// ALI SEARCH AI - PRO VERSION
 // ======================================================
 
+const socket = io();
+let socketId = null;
+
 // ===============================
-// ELEMENTS
+// SOCKET
+// ===============================
+
+socket.on("connected", (data) => {
+  socketId = data.socketId;
+});
+
+// ===============================
+// LOGIN SYSTEM
+// ===============================
+
+async function login() {
+
+  const password = document.getElementById("passwordInput").value;
+
+  const res = await fetch("/admin/login", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ password })
+  });
+
+  if (!res.ok) {
+    alert("❌ Wrong password");
+    return;
+  }
+
+  localStorage.setItem("loggedIn", "true");
+
+  document.getElementById("loginSection").style.display = "none";
+  document.getElementById("appSection").style.display = "block";
+}
+
+// Auto login if session exists
+if (localStorage.getItem("loggedIn")) {
+  document.getElementById("loginSection").style.display = "none";
+  document.getElementById("appSection").style.display = "block";
+}
+
+// ===============================
+// DOM ELEMENTS
 // ===============================
 
 const form = document.getElementById("uploadForm");
 const logsDiv = document.getElementById("logs");
 const resultsDiv = document.getElementById("results");
-const loadingBar = document.querySelector(".loading-bar");
-
-// ===============================
-// SOCKET CONNECTION
-// ===============================
-
-const socket = io();
-let socketId = null;
-
-socket.on("connected", (data) => {
-  socketId = data.socketId;
-  console.log("🟢 Socket connected:", socketId);
-});
+const progressBar = document.querySelector(".progress-bar");
 
 // ===============================
 // LIVE LOGS
@@ -33,7 +64,9 @@ socket.on("log", (data) => {
   const line = document.createElement("div");
 
   line.innerHTML = `
-    <span style="color:gray">[${new Date(data.time).toLocaleTimeString()}]</span>
+    <span style="color:gray">
+      [${new Date(data.time).toLocaleTimeString()}]
+    </span>
     <span class="log-${data.type}">
       ${data.message}
     </span>
@@ -45,37 +78,7 @@ socket.on("log", (data) => {
 });
 
 // ===============================
-// LOADING BAR ANIMATION
-// ===============================
-
-function startLoading() {
-  loadingBar.style.width = "0%";
-
-  let progress = 0;
-
-  const interval = setInterval(() => {
-
-    progress += 10;
-
-    if (progress >= 90) {
-      clearInterval(interval);
-    }
-
-    loadingBar.style.width = progress + "%";
-
-  }, 300);
-}
-
-function stopLoading() {
-  loadingBar.style.width = "100%";
-
-  setTimeout(() => {
-    loadingBar.style.width = "0%";
-  }, 500);
-}
-
-// ===============================
-// FORM SUBMIT
+// ANALYZE
 // ===============================
 
 form.addEventListener("submit", async (e) => {
@@ -88,9 +91,11 @@ form.addEventListener("submit", async (e) => {
   const files = document.querySelector("input[type=file]").files;
 
   if (!files.length) {
-    alert("Please select images");
+    alert("Select images first");
     return;
   }
+
+  progressBar.style.width = "0%";
 
   const formData = new FormData();
 
@@ -100,30 +105,24 @@ form.addEventListener("submit", async (e) => {
 
   formData.append("socketId", socketId);
 
-  startLoading();
+  progressBar.style.width = "30%";
 
-  try {
+  const response = await fetch("/analyze", {
+    method: "POST",
+    body: formData
+  });
 
-    const response = await fetch("/analyze", {
-      method: "POST",
-      body: formData
-    });
+  progressBar.style.width = "80%";
 
-    const data = await response.json();
+  const data = await response.json();
 
-    displayResults(data.results);
+  displayResults(data.results);
 
-  } catch (err) {
+  progressBar.style.width = "100%";
 
-    logsDiv.innerHTML += `
-      <div style="color:red">
-        ❌ Request failed
-      </div>
-    `;
-
-  }
-
-  stopLoading();
+  setTimeout(() => {
+    progressBar.style.width = "0%";
+  }, 800);
 
 });
 
@@ -135,11 +134,8 @@ function displayResults(results) {
 
   if (!results || results.length === 0) {
 
-    resultsDiv.innerHTML = `
-      <h3 style="color:red">
-        ❌ No results found
-      </h3>
-    `;
+    resultsDiv.innerHTML =
+      "<h3 style='color:red'>❌ No results</h3>";
 
     return;
   }
@@ -147,7 +143,7 @@ function displayResults(results) {
   results.forEach(result => {
 
     const card = document.createElement("div");
-    card.className = "result-card";
+    card.className = "product-card";
 
     let html = `
       <h3>📷 ${result.image}</h3>
@@ -157,7 +153,7 @@ function displayResults(results) {
 
       html += `
         <p style="color:red">
-          ❌ No AliExpress match ≥60%
+          ❌ No match ≥60%
         </p>
       `;
 
@@ -166,8 +162,8 @@ function displayResults(results) {
       result.matches.forEach(match => {
 
         html += `
-          <div class="product">
-            <p>🔥 Similarity: ${match.similarity}%</p>
+          <div class="product-item">
+            <p>🔥 Match: ${match.similarity}%</p>
             <a href="${match.url}" target="_blank">
               🔗 Open Product
             </a>
