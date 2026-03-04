@@ -10,7 +10,9 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage()
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -108,7 +110,7 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
   for (const file of req.files) {
 
-    sendLog(socket, `🖼 Processing image ${file.originalname}`);
+    sendLog(socket, `🖼 Processing image: ${file.originalname}`);
 
     const base64Input = file.buffer.toString("base64");
 
@@ -134,23 +136,33 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
         form,
         {
           headers: {
-            ...form.getHeaders()
+            ...form.getHeaders(),
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Accept": "application/json"
           }
         }
       );
 
-      productsData = searchResponse.data?.data?.products || [];
+      console.log("API RAW RESPONSE:");
+      console.log(searchResponse.data);
+
+      productsData =
+        searchResponse.data?.data?.products || [];
 
       sendLog(socket, `📦 ${productsData.length} products returned`);
 
     } catch (err) {
 
+      console.log("IMAGE API ERROR:");
+      console.log(err.response?.status);
+      console.log(err.response?.data);
+
       sendLog(socket, "❌ Image search API failed");
+
       productsData = [];
 
     }
-
-    const matchedProducts = [];
 
     /*
     ====================================================
@@ -158,12 +170,16 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
     ====================================================
     */
 
+    const matchedProducts = [];
+
     const topProducts = productsData.slice(0, 10);
 
     await Promise.all(
       topProducts.map(async (product) => {
 
         const productId = product.productId;
+
+        if (!productId) return;
 
         const productUrl =
           "https://www.aliexpress.com/item/" +
@@ -202,13 +218,16 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
               url: productUrl,
               similarity
             });
+
           } else {
 
             sendLog(socket, `❌ Rejected ${similarity}%`);
           }
 
-        } catch {
+        } catch (err) {
+
           sendLog(socket, "⚠ Product processing failed");
+
         }
 
       })
@@ -224,9 +243,11 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
       image: file.originalname,
       matches: sorted
     });
+
   }
 
   res.json({ results });
+
 });
 
 /*
