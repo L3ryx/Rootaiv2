@@ -24,25 +24,31 @@ LOG SYSTEM
 ====================================================
 */
 
-function sendLog(socket, message) {
-  console.log("LOG:", message);
+function sendLog(socket, message, type = "info") {
+
+  const payload = {
+    message,
+    type,
+    time: new Date().toISOString()
+  };
+
+  console.log(`[${type.toUpperCase()}] ${message}`);
 
   if (socket) {
-    socket.emit("log", {
-      message,
-      time: new Date().toISOString()
-    });
+    socket.emit("log", payload);
   }
 }
 
 /*
 ====================================================
-IMAGE SIMILARITY (OPENAI)
+OPENAI IMAGE SIMILARITY
 ====================================================
 */
 
-async function calculateSimilarity(base64A, base64B) {
+async function calculateSimilarity(base64A, base64B, socket) {
+
   try {
+
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
@@ -84,14 +90,23 @@ async function calculateSimilarity(base64A, base64B) {
     return match ? parseFloat(match[0]) : 0;
 
   } catch (err) {
-    console.log("Similarity error:", err.message);
+
+    const status = err.response?.status;
+    const data = err.response?.data;
+
+    sendLog(
+      socket,
+      `❌ OpenAI similarity failed | Status: ${status} | Error: ${JSON.stringify(data)}`,
+      "error"
+    );
+
     return 0;
   }
 }
 
 /*
 ====================================================
-ANALYZE ROUTE
+ANALYSIS ROUTE
 ====================================================
 */
 
@@ -103,7 +118,12 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
   const results = [];
 
   if (!req.files || req.files.length === 0) {
-    return res.status(400).json({ error: "No images uploaded" });
+
+    sendLog(socket, "❌ No images uploaded", "error");
+
+    return res.status(400).json({
+      error: "No images uploaded"
+    });
   }
 
   sendLog(socket, "📥 Images received");
@@ -115,9 +135,9 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
     const base64Input = file.buffer.toString("base64");
 
     /*
-    ====================================================
-    1️⃣ CALL OFFICIAL ALIEXPRESS IMAGE SEARCH API
-    ====================================================
+    =====================================================
+    1️⃣ CALL ALIEXPRESS IMAGE SEARCH API
+    =====================================================
     */
 
     sendLog(socket, "🔎 Calling AliExpress image search API");
@@ -137,37 +157,42 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
         {
           headers: {
             ...form.getHeaders(),
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "User-Agent": "Mozilla/5.0",
             "Accept": "application/json"
           }
         }
       );
 
-      console.log("API RAW RESPONSE:");
+      console.log("RAW IMAGE SEARCH RESPONSE:");
       console.log(searchResponse.data);
 
       productsData =
         searchResponse.data?.data?.products || [];
 
-      sendLog(socket, `📦 ${productsData.length} products returned`);
+      sendLog(
+        socket,
+        `📦 ${productsData.length} products returned from image API`,
+        "success"
+      );
 
     } catch (err) {
 
-      console.log("IMAGE API ERROR:");
-      console.log(err.response?.status);
-      console.log(err.response?.data);
+      const status = err.response?.status;
+      const data = err.response?.data;
 
-      sendLog(socket, "❌ Image search API failed");
+      sendLog(
+        socket,
+        `❌ Image search API failed | Status: ${status} | Error: ${JSON.stringify(data)}`,
+        "error"
+      );
 
       productsData = [];
-
     }
 
     /*
-    ====================================================
-    2️⃣ PROCESS TOP 10 PRODUCTS
-    ====================================================
+    =====================================================
+    2️⃣ PROCESS PRODUCTS
+    =====================================================
     */
 
     const matchedProducts = [];
@@ -192,7 +217,11 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
           const productImageUrl = product.imageUrl;
 
-          if (!productImageUrl) return;
+          if (!productImageUrl) {
+
+            sendLog(socket, "⚠ Product image missing", "warning");
+            return;
+          }
 
           const imgResponse = await axios.get(productImageUrl, {
             responseType: "arraybuffer"
@@ -205,14 +234,15 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
           const similarityRaw = await calculateSimilarity(
             base64Input,
-            base64Product
+            base64Product,
+            socket
           );
 
           const similarity = Math.round(similarityRaw * 100);
 
           if (similarity >= 60) {
 
-            sendLog(socket, `✅ Match found ${similarity}%`);
+            sendLog(socket, `✅ Match found ${similarity}%`, "success");
 
             matchedProducts.push({
               url: productUrl,
@@ -221,12 +251,19 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
           } else {
 
-            sendLog(socket, `❌ Rejected ${similarity}%`);
+            sendLog(socket, `❌ Rejected ${similarity}%`, "info");
           }
 
         } catch (err) {
 
-          sendLog(socket, "⚠ Product processing failed");
+          const status = err.response?.status;
+          const data = err.response?.data;
+
+          sendLog(
+            socket,
+            `❌ Product processing failed | Status: ${status} | Error: ${JSON.stringify(data)}`,
+            "error"
+          );
 
         }
 
@@ -237,17 +274,15 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
       (a, b) => b.similarity - a.similarity
     );
 
-    sendLog(socket, "🏁 Image finished");
+    sendLog(socket, "🏁 Image processing finished", "success");
 
     results.push({
       image: file.originalname,
       matches: sorted
     });
-
   }
 
   res.json({ results });
-
 });
 
 /*
