@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Create Account</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1 class="main-title">Create Account</h1>
+
+<div class="tool">
+
+<input id="username" placeholder="Username">
+<br><br>
+
+<input id="password" type="password" placeholder="Password">
+<br><br>
+
+<button class="search-btn" onclick="register()">
+✅ Register
+</button>
+
+<p>
+Already have an account?
+<a href="/login">Login</a>
+</p>
+
+</div>
+
+<script>
+
+async function register() {
+
+  const res = await fetch("/api/register", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      username: username.value,
+      password: password.value
+    })
+  });
+
+  const data = await res.json();
+
+  if (data.success) {
+    alert("Account created !");
+    window.location = "/login";
+  } else {
+    alert("Error creating account");
+  }
+
+}
+
+</script>
+
+</body>
+</html>
