@@ -1,5 +1,5 @@
 // ======================================================
-// ALI SEARCH AI - SECURE VERSION
+// ALI SEARCH AI - ULTRA SECURE VERSION
 // ======================================================
 
 const express = require("express");
@@ -9,7 +9,6 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcrypt");
-const CryptoJS = require("crypto-js");
 const crypto = require("crypto");
 
 const app = express();
@@ -17,13 +16,13 @@ const server = http.createServer(app);
 
 const PORT = 3000;
 
-const SECRET_KEY = "CHANGE_THIS_SECRET";
 const ADMIN_USERNAME = "darkoff";
 const ADMIN_PASSWORD_PLAIN = "Bretigny91";
 
 const USERS_PATH = "./users.json";
 const SESSIONS_PATH = "./sessions.json";
-const CONFIG_PATH = "./config.json";
+
+const SESSION_DURATION = 1000 * 60 * 60; // ⏳ 1 heure
 
 // ======================================================
 // UTILS
@@ -39,7 +38,7 @@ function writeJSON(file, data) {
 }
 
 // ======================================================
-// AUTO CREATE ADMIN
+// AUTO CREATE ADMIN (IMMUTABLE)
 // ======================================================
 
 async function createDefaultAdmin() {
@@ -56,6 +55,7 @@ async function createDefaultAdmin() {
     username: ADMIN_USERNAME,
     password: hash,
     role: "admin",
+    immutable: true,
     createdAt: new Date()
   });
 
@@ -66,7 +66,30 @@ async function createDefaultAdmin() {
 }
 
 // ======================================================
-// MIDDLEWARE AUTH
+// SESSION CLEANER
+// ======================================================
+
+function cleanExpiredSessions() {
+
+  const sessions = readJSON(SESSIONS_PATH, []);
+
+  const now = Date.now();
+
+  const active = sessions.filter(session => {
+
+    return now - session.createdAt < SESSION_DURATION;
+
+  });
+
+  writeJSON(SESSIONS_PATH, active);
+
+}
+
+// Run cleanup every 10 minutes
+setInterval(cleanExpiredSessions, 600000);
+
+// ======================================================
+// AUTH MIDDLEWARE
 // ======================================================
 
 function authMiddleware(req, res, next) {
@@ -75,6 +98,8 @@ function authMiddleware(req, res, next) {
 
   if (!token)
     return res.status(401).json({ error: "No token" });
+
+  cleanExpiredSessions();
 
   const sessions = readJSON(SESSIONS_PATH, []);
 
@@ -91,19 +116,22 @@ function adminMiddleware(req, res, next) {
 
   const token = req.headers.authorization;
 
+  cleanExpiredSessions();
+
   const sessions = readJSON(SESSIONS_PATH, []);
 
-  const session = sessions.find(s => s.token === token);
+  const session = sessions.find(
+    s => s.token === token && s.role === "admin"
+  );
 
-  if (!session || session.role !== "admin") {
+  if (!session)
     return res.status(403).json({ error: "Admin only" });
-  }
 
   next();
 }
 
 // ======================================================
-// MIDDLEWARE EXPRESS
+// EXPRESS CONFIG
 // ======================================================
 
 app.use(express.json());
@@ -124,7 +152,7 @@ const upload = multer({
 app.use("/uploads", express.static(uploadDir));
 
 // ======================================================
-// REGISTER (FORCE USER ROLE)
+// REGISTER (FORCE ROLE USER)
 // ======================================================
 
 app.post("/api/register", async (req, res) => {
@@ -143,6 +171,7 @@ app.post("/api/register", async (req, res) => {
     username,
     password: hash,
     role: "user",
+    immutable: false,
     createdAt: new Date()
   });
 
@@ -152,7 +181,7 @@ app.post("/api/register", async (req, res) => {
 });
 
 // ======================================================
-// LOGIN (USER + ADMIN)
+// LOGIN
 // ======================================================
 
 app.post("/api/login", async (req, res) => {
@@ -177,15 +206,13 @@ app.post("/api/login", async (req, res) => {
   sessions.push({
     token,
     username,
-    role: user.role
+    role: user.role,
+    createdAt: Date.now()
   });
 
   writeJSON(SESSIONS_PATH, sessions);
 
-  res.json({
-    token,
-    role: user.role
-  });
+  res.json({ token, role: user.role });
 });
 
 // ======================================================
@@ -205,39 +232,39 @@ app.post("/api/logout", (req, res) => {
 });
 
 // ======================================================
-// PROTECTED ADMIN ROUTE
+// ADMIN PROTECTED ROUTE
 // ======================================================
 
 app.get("/api/admin/users", adminMiddleware, (req, res) => {
 
   const users = readJSON(USERS_PATH, []);
 
-  // ❌ Prevent returning password hashes
-  const safeUsers = users.map(u => ({
+  const safe = users.map(u => ({
     username: u.username,
     role: u.role,
-    createdAt: u.createdAt
+    createdAt: u.createdAt,
+    immutable: u.immutable
   }));
 
-  res.json(safeUsers);
+  res.json(safe);
 });
 
 // ======================================================
-// ANALYZE
+// ANALYZE (PROTECTED)
 // ======================================================
 
-app.post("/analyze", authMiddleware, upload.array("images"), async (req, res) => {
+app.post("/analyze", authMiddleware, upload.array("images"), (req, res) => {
 
   const results = [];
 
   for (const file of req.files) {
 
-    const publicUrl =
+    const url =
       `${req.protocol}://${req.get("host")}/uploads/${file.filename}`;
 
     results.push({
       image: file.filename,
-      url: publicUrl
+      url
     });
   }
 
