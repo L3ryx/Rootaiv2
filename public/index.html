@@ -41,10 +41,9 @@ button {
   left:20px;
   background:#ffcc00;
   color:black;
-  z-index:9999;
 }
 
-/* ================= POPUP ================= */
+/* Popup */
 
 .popup {
   display:none;
@@ -56,7 +55,7 @@ button {
   padding:30px;
   border-radius:12px;
   border:2px solid #00ff88;
-  z-index:10000;
+  z-index:9999;
 }
 
 .popup input {
@@ -79,16 +78,16 @@ Settings
 
 <div class="popup" id="settingsPopup">
 
-<h3>API Settings</h3>
+<h3>API Keys</h3>
 
 <p>IMGBB</p>
-<input id="imgbb" type="text">
+<input type="text" id="imgbb">
 
 <p>OPENAI</p>
-<input id="openai" type="text">
+<input type="text" id="openai">
 
 <p>SERPAPI</p>
-<input id="serpapi" type="text">
+<input type="text" id="serpapi">
 
 <br>
 
@@ -102,7 +101,7 @@ Close
 
 </div>
 
-<!-- MAIN UI -->
+<!-- MAIN -->
 
 <div class="container">
 
@@ -130,13 +129,13 @@ function openSettings() {
   document.getElementById("settingsPopup").style.display = "block";
 
   document.getElementById("imgbb").value =
-    localStorage.getItem("IMGBB_KEY") || "";
+    window.currentKeys?.imgbb || "";
 
   document.getElementById("openai").value =
-    localStorage.getItem("OPENAI_KEY") || "";
+    window.currentKeys?.openai || "";
 
   document.getElementById("serpapi").value =
-    localStorage.getItem("SERPAPI_KEY") || "";
+    window.currentKeys?.serpapi || "";
 }
 
 function closeSettings() {
@@ -145,16 +144,13 @@ function closeSettings() {
 
 function saveSettings() {
 
-  localStorage.setItem("IMGBB_KEY",
-    document.getElementById("imgbb").value);
+  window.currentKeys = {
+    imgbb: document.getElementById("imgbb").value,
+    openai: document.getElementById("openai").value,
+    serpapi: document.getElementById("serpapi").value
+  };
 
-  localStorage.setItem("OPENAI_KEY",
-    document.getElementById("openai").value);
-
-  localStorage.setItem("SERPAPI_KEY",
-    document.getElementById("serpapi").value);
-
-  alert("Keys saved locally !");
+  alert("Keys stored temporarily !");
   closeSettings();
 }
 
@@ -165,7 +161,7 @@ async function analyze() {
   const fileInput = document.getElementById("fileInput");
 
   if (!fileInput.files.length) {
-    alert("Select image first");
+    alert("Select image");
     return;
   }
 
@@ -173,17 +169,12 @@ async function analyze() {
 
   formData.append("image", fileInput.files[0]);
 
-  formData.append("imgbb",
-    localStorage.getItem("IMGBB_KEY"));
-
-  formData.append("openai",
-    localStorage.getItem("OPENAI_KEY"));
-
-  formData.append("serpapi",
-    localStorage.getItem("SERPAPI_KEY"));
+  formData.append("imgbb", window.currentKeys?.imgbb || "");
+  formData.append("openai", window.currentKeys?.openai || "");
+  formData.append("serpapi", window.currentKeys?.serpapi || "");
 
   const res = await fetch("/analyze", {
-    method:"POST",
+    method: "POST",
     body: formData
   });
 
