@@ -1,63 +1,31 @@
+// ======================================================
+// AUTH CHECK (RUN ON EVERY PAGE)
+// ======================================================
+
 const token = localStorage.getItem("token");
 const role = localStorage.getItem("role");
 
 if (!token) {
-  window.location = "/login";
-}
-
-// ==============================
-// ADMIN BUTTON
-// ==============================
-
-const adminBtn = document.getElementById("adminBtn");
-
-if (role === "admin") {
-  adminBtn.style.display = "block";
-  adminBtn.onclick = () => window.location = "/admin";
-}
-
-// ==============================
-// IMAGE UPLOAD
-// ==============================
-
-let files = [];
-
-document.getElementById("imageInput").addEventListener("change", e => {
-
-  files = Array.from(e.target.files);
-
-  const preview = document.getElementById("preview");
-  preview.innerHTML = "";
-
-  files.forEach(file => {
-    const img = document.createElement("img");
-    img.src = URL.createObjectURL(file);
-    img.width = 200;
-    preview.appendChild(img);
+  window.location = "/login.html";
+} else {
+  fetch("/api/verify", {
+    method: "GET",
+    headers: {
+      "Authorization": token
+    }
+  })
+  .then(res => {
+    if (!res.ok) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("role");
+      window.location = "/login.html";
+    }
   });
-
-});
-
-async function uploadImages() {
-
-  const formData = new FormData();
-
-  files.forEach(f => formData.append("images", f));
-
-  const res = await fetch("/analyze", {
-    method: "POST",
-    body: formData
-  });
-
-  const data = await res.json();
-
-  document.getElementById("results").innerText =
-    JSON.stringify(data, null, 2);
 }
 
-// ==============================
+// ======================================================
 // LOGOUT
-// ==============================
+// ======================================================
 
 async function logout() {
 
@@ -68,5 +36,5 @@ async function logout() {
   });
 
   localStorage.clear();
-  window.location = "/login";
+  window.location = "/login.html";
 }
