@@ -8,25 +8,32 @@
 <style>
 
 /* ============================= */
-/* TOOL BACKGROUND FROM GITHUB */
+/* GLOBAL */
 /* ============================= */
 
-body {
+body{
   margin:0;
-  padding:0;
-  font-family: Arial, sans-serif;
+  font-family:Arial;
+  background:black;
   color:white;
-
-  background: url("https://raw.githubusercontent.com/TON_USERNAME/assets-tool/main/background-tool.jpg");
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
+  overflow:hidden;
 }
 
-/* Dark overlay */
-body::before {
-  content:"";
-  position:absolute;
+/* ============================= */
+/* MATRIX BACKGROUND */
+/* ============================= */
+
+#matrix{
+  position:fixed;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  z-index:-2;
+}
+
+.overlay{
+  position:fixed;
   top:0;
   left:0;
   width:100%;
@@ -36,72 +43,151 @@ body::before {
 }
 
 /* ============================= */
-/* TOOL CONTAINER */
+/* TOP BARS */
 /* ============================= */
 
-.container {
-  text-align:center;
-  padding-top:100px;
+.top-left{
+  position:absolute;
+  top:20px;
+  left:20px;
 }
 
-button {
-  padding:12px 20px;
+.top-right{
+  position:absolute;
+  top:20px;
+  right:20px;
+}
+
+.admin-btn{
+  padding:10px 15px;
   background:red;
   border:none;
   border-radius:8px;
   color:white;
   font-weight:bold;
   cursor:pointer;
-  transition:0.3s;
 }
 
-button:hover {
+.admin-btn:hover{
   background:darkred;
 }
 
-input {
-  padding:10px;
+.logout-btn{
+  padding:10px 15px;
+  background:black;
+  border:1px solid red;
   border-radius:8px;
-  border:none;
-  margin:10px;
+  color:white;
+  cursor:pointer;
 }
 
-#logoutBtn {
-  position:absolute;
-  top:20px;
-  right:20px;
+.logout-btn:hover{
+  background:red;
+}
+
+/* ============================= */
+/* MAIN */
+/* ============================= */
+
+.container{
+  text-align:center;
+  padding-top:150px;
+}
+
+input[type="file"]{
+  padding:10px;
+  background:#111;
+  border-radius:8px;
+  color:white;
+  margin:20px;
+}
+
+/* 🔥 BUTTON LANCÉ */
+
+.launch-btn{
+  padding:15px 35px;
+  font-size:18px;
+  font-weight:bold;
+  background:green;
+  color:white;
+  border:none;
+  border-radius:12px;
+  cursor:pointer;
+  transition:0.3s;
+}
+
+.launch-btn:hover{
+  background:#00aa00;
+}
+
+#results{
+  margin-top:30px;
 }
 
 </style>
 </head>
 <body>
 
-<button id="logoutBtn" onclick="logout()">Logout</button>
+<canvas id="matrix"></canvas>
+<div class="overlay"></div>
+
+<!-- ============================ -->
+<!-- TOP BUTTONS -->
+<!-- ============================ -->
+
+<div class="top-left">
+<button class="admin-btn" onclick="goAdmin()">Admin</button>
+</div>
+
+<div class="top-right">
+<button class="logout-btn" onclick="logout()">Logout</button>
+</div>
+
+<!-- ============================ -->
+<!-- CONTENT -->
+<!-- ============================ -->
 
 <div class="container">
 
 <h1>🚀 Ali Search AI</h1>
 
 <input type="file" id="images" multiple>
+
 <br>
-<button onclick="upload()">Upload</button>
+
+<button class="launch-btn" onclick="uploadImages()">
+Lancé
+</button>
 
 <div id="results"></div>
 
 </div>
 
-<script src="script.js"></script>
-
 <script>
+
+/* ============================= */
+/* ADMIN BUTTON */
+/* ============================= */
+
+function goAdmin(){
+  const role = localStorage.getItem("role");
+
+  if(role === "admin"){
+    window.location = "/admin.html";
+  } else {
+    alert("Admin only");
+  }
+}
 
 /* ============================= */
 /* LOGOUT */
 /* ============================= */
 
-function logout(){
+async function logout(){
+
   const token = localStorage.getItem("token");
 
-  fetch("/api/logout",{
+  await fetch("/api/logout",{
     method:"POST",
     headers:{
       "Content-Type":"application/json"
@@ -112,6 +198,83 @@ function logout(){
   localStorage.clear();
   window.location="/login.html";
 }
+
+/* ============================= */
+/* UPLOAD */
+/* ============================= */
+
+async function uploadImages(){
+
+  const input = document.getElementById("images");
+
+  if(input.files.length === 0){
+    alert("Select image");
+    return;
+  }
+
+  const token = localStorage.getItem("token");
+
+  const formData = new FormData();
+
+  for(let file of input.files){
+    formData.append("images", file);
+  }
+
+  const res = await fetch("/analyze",{
+    method:"POST",
+    headers:{
+      "Authorization": token
+    },
+    body: formData
+  });
+
+  const data = await res.json();
+
+  document.getElementById("results").innerHTML =
+    "<pre>"+JSON.stringify(data,null,2)+"</pre>";
+}
+
+/* ============================= */
+/* MATRIX ANIMATION */
+/* ============================= */
+
+const canvas = document.getElementById("matrix");
+const ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const letters = "010101ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const fontSize = 18;
+const columns = canvas.width / fontSize;
+const drops = [];
+
+for(let i=0;i<columns;i++){
+  drops[i] = 1;
+}
+
+function draw(){
+
+  ctx.fillStyle = "rgba(0,0,0,0.05)";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  ctx.fillStyle = "#00ffcc";
+  ctx.font = fontSize+"px monospace";
+
+  for(let i=0;i<drops.length;i++){
+
+    const text = letters[Math.floor(Math.random()*letters.length)];
+    ctx.fillText(text, i*fontSize, drops[i]*fontSize);
+
+    if(drops[i]*fontSize > canvas.height && Math.random()>0.975){
+      drops[i] = 0;
+    }
+
+    drops[i]++;
+  }
+}
+
+setInterval(draw,50);
 
 </script>
 
