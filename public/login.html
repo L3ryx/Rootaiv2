@@ -1,27 +1,145 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login - Ali Search AI</title>
+
+<link rel="stylesheet" href="style.css">
+
+<style>
+body {
+  background: #000;
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  font-family: Arial, sans-serif;
+}
+
+.login-box {
+  background: #111;
+  padding: 40px;
+  border-radius: 15px;
+  width: 350px;
+  text-align: center;
+  box-shadow: 0 0 20px red;
+}
+
+.login-box h1 {
+  margin-bottom: 20px;
+  font-size: 28px;
+  color: red;
+}
+
+.login-box input {
+  width: 100%;
+  padding: 12px;
+  margin: 10px 0;
+  border-radius: 8px;
+  border: none;
+  outline: none;
+}
+
+.login-box button {
+  width: 100%;
+  padding: 12px;
+  background: red;
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.login-box button:hover {
+  background: darkred;
+}
+
+.register-link {
+  margin-top: 15px;
+  display: block;
+  color: white;
+  text-decoration: none;
+}
+
+.register-link:hover {
+  color: red;
+}
+</style>
+
+</head>
+<body>
+
+<div class="login-box">
+
+<h1>Login</h1>
+
+<input type="text" id="username" placeholder="Username">
+<input type="password" id="password" placeholder="Password">
+
+<button onclick="login()">Login</button>
+
+<a class="register-link" href="/register.html">
+Create Account
+</a>
+
+</div>
+
 <script>
+
+// ======================================================
+// LOGIN FUNCTION
+// ======================================================
 
 async function login() {
 
-  const res = await fetch("/api/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      username: username.value,
-      password: password.value
-    })
-  });
+  const username = document.getElementById("username").value;
+  const password = document.getElementById("password").value;
 
-  const data = await res.json();
-
-  if (!data.token) {
-    alert("Login failed");
+  if (!username || !password) {
+    alert("Please fill all fields");
     return;
   }
 
-  localStorage.setItem("token", data.token);
-  localStorage.setItem("role", data.role);
+  try {
 
-  window.location = "/index.html";
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        username,
+        password
+      })
+    });
+
+    const data = await res.json();
+
+    if (!data.token) {
+      alert("Login failed");
+      return;
+    }
+
+    // ✅ Save token + role
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("role", data.role);
+
+    // 🔥 Redirect to main page
+    window.location = "/index.html";
+
+  } catch (err) {
+    console.error("Login error:", err);
+    alert("Server error");
+  }
 }
 
+// ======================================================
+
 </script>
+
+</body>
+</html>
