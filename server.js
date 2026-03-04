@@ -1,5 +1,5 @@
 // ======================================================
-// ROOT AI V2 - FINAL SECURE VERSION
+// ROOT AI V2 - FINAL PRODUCTION SECURE VERSION
 // ======================================================
 
 const express = require("express");
@@ -9,6 +9,8 @@ const path = require("path");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const cookieParser = require("cookie-parser");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 const server = http.createServer(app);
@@ -17,11 +19,20 @@ const PORT = process.env.PORT || 3000;
 
 const USERS_PATH = "./users.json";
 const SESSIONS_PATH = "./sessions.json";
-const SESSION_DURATION = 1000 * 60 * 60; // 1 heure
+const SESSION_DURATION = 1000 * 60 * 60; // 1h
 
 // ======================================================
-// BASIC CONFIG
+// SECURITY MIDDLEWARES
 // ======================================================
+
+app.use(helmet());
+
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false
+}));
 
 app.use(express.json());
 app.use(cookieParser());
@@ -41,7 +52,7 @@ function writeJSON(file, data) {
 }
 
 // ======================================================
-// CLEAR SESSIONS AU DÉMARRAGE
+// CLEAR SESSIONS ON START
 // ======================================================
 
 writeJSON(SESSIONS_PATH, []);
@@ -71,10 +82,13 @@ async function createAdmin() {
 }
 
 // ======================================================
-// AUTH SYSTEM
+// SESSION MANAGEMENT
 // ======================================================
 
 function getSession(token) {
+
+  if (!token) return null;
+
   const sessions = readJSON(SESSIONS_PATH, []);
   const session = sessions.find(s => s.token === token);
 
@@ -115,7 +129,7 @@ function requireAdmin(req, res, next) {
 }
 
 // ======================================================
-// ROUTES HTML
+// ROUTES HTML PROTECTED
 // ======================================================
 
 app.get("/", (req, res) => {
@@ -135,12 +149,16 @@ app.get("/admin", requireAdmin, (req, res) => {
 });
 
 // ======================================================
-// API LOGIN
+// LOGIN API
 // ======================================================
 
 app.post("/api/login", async (req, res) => {
 
   const { username, password } = req.body;
+
+  if (!username || !password)
+    return res.status(400).json({ error: "Missing credentials" });
+
   const users = readJSON(USERS_PATH, []);
   const user = users.find(u => u.username === username);
 
@@ -166,7 +184,7 @@ app.post("/api/login", async (req, res) => {
 
   res.cookie("session", token, {
     httpOnly: true,
-    secure: true,       // false en local
+    secure: true,          // mettre false si test en local HTTP
     sameSite: "strict",
     maxAge: SESSION_DURATION
   });
@@ -175,7 +193,7 @@ app.post("/api/login", async (req, res) => {
 });
 
 // ======================================================
-// LOGOUT
+// LOGOUT API
 // ======================================================
 
 app.post("/api/logout", (req, res) => {
@@ -193,14 +211,14 @@ app.post("/api/logout", (req, res) => {
 });
 
 // ======================================================
-// STATIC FILES (PAS D'HTML)
+// STATIC FILES (NO DIRECT HTML ACCESS)
 // ======================================================
 
 app.use("/assets", express.static(path.join(__dirname, "public/assets")));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ======================================================
-// START
+// START SERVER
 // ======================================================
 
 server.listen(PORT, async () => {
