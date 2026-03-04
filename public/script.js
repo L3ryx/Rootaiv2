@@ -1,61 +1,141 @@
-// ======================================================
-// FORCE AUTH VERIFICATION (SECURITY IMPROVED)
-// ======================================================
+// ========================================
+// SOCKET CONNECTION
+// ========================================
 
-document.addEventListener("DOMContentLoaded", async () => {
+const socket = io();
+let socketId = null;
 
-  const token = localStorage.getItem("token");
+socket.on("connected", (data) => {
+  socketId = data.socketId;
+  console.log("🟢 Socket connected:", socketId);
+});
 
-  if (!token) {
-    redirectToLogin();
+// ========================================
+// LIVE LOGS
+// ========================================
+
+socket.on("log", (data) => {
+
+  const logsDiv = document.getElementById("logs");
+
+  const line = document.createElement("div");
+
+  line.className = `log-${data.type}`;
+
+  line.innerHTML = `
+    <span style="color:#888">
+      [${new Date(data.time).toLocaleTimeString()}]
+    </span>
+    ${data.message}
+  `;
+
+  logsDiv.appendChild(line);
+
+  logsDiv.scrollTop = logsDiv.scrollHeight;
+});
+
+// ========================================
+// FORM SUBMISSION
+// ========================================
+
+const form = document.getElementById("uploadForm");
+const resultsContainer = document.getElementById("results");
+
+form.addEventListener("submit", async (e) => {
+
+  e.preventDefault();
+
+  resultsContainer.innerHTML = "";
+  document.getElementById("logs").innerHTML =
+    "<p>🚀 Starting analysis...</p>";
+
+  const filesInput = document.querySelector("input[type='file']");
+  const files = filesInput.files;
+
+  if (!files || files.length === 0) {
+    alert("Please upload at least one image");
     return;
   }
 
+  const formData = new FormData();
+
+  for (const file of files) {
+    formData.append("images", file);
+  }
+
+  formData.append("socketId", socketId);
+
   try {
 
-    const res = await fetch("/api/verify", {
-      method: "GET",
-      headers: {
-        "Authorization": token
-      }
+    const response = await fetch("/analyze", {
+      method: "POST",
+      body: formData
     });
 
-    if (!res.ok) {
+    const data = await response.json();
 
-      // ❌ Token invalide → suppression immédiate
-      localStorage.clear();
-      redirectToLogin();
-    }
+    displayResults(data.results);
 
   } catch (err) {
-    console.error("Verification error:", err);
-    redirectToLogin();
+
+    console.error("❌ Request failed:", err);
+
   }
 
 });
 
-function redirectToLogin() {
-  if (window.location.pathname !== "/login.html") {
-    window.location = "/login.html";
+// ========================================
+// DISPLAY RESULTS
+// ========================================
+
+function displayResults(results) {
+
+  const resultsContainer = document.getElementById("results");
+
+  if (!results || results.length === 0) {
+
+    resultsContainer.innerHTML =
+      "<p style='color:red'>❌ No results returned</p>";
+
+    return;
   }
-}
 
-// ======================================================
-// LOGOUT SECURE
-// ======================================================
+  results.forEach(result => {
 
-async function logout(){
+    const card = document.createElement("div");
+    card.className = "result-card";
 
-  const token = localStorage.getItem("token");
+    let html = `
+      <h3>📷 ${result.image}</h3>
+    `;
 
-  await fetch("/api/logout",{
-    method:"POST",
-    headers:{
-      "Content-Type":"application/json"
-    },
-    body:JSON.stringify({ token })
+    if (!result.matches || result.matches.length === 0) {
+
+      html += `
+        <p style="color:red">
+          ❌ No match found (≥60%)
+        </p>
+      `;
+
+    } else {
+
+      result.matches.forEach(match => {
+
+        html += `
+          <div class="product">
+            <p>🔥 Similarity: ${match.similarity}%</p>
+            <a href="${match.url}" target="_blank">
+              🔗 Open Product
+            </a>
+          </div>
+        `;
+
+      });
+
+    }
+
+    card.innerHTML = html;
+    resultsContainer.appendChild(card);
+
   });
-
-  localStorage.clear();
-  window.location="/login.html";
 }
