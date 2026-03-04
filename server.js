@@ -1,218 +1,138 @@
 // ======================================================
-// ROOTAIV2 - CLEAN PRODUCTION VERSION
-// Admin must login
-// API keys stored server side
+// ROOT AI - USER PROVIDED API KEYS VERSION
+// No authentication
+// Keys are sent from frontend
 // ======================================================
 
 const express = require("express");
 const http = require("http");
-const fs = require("fs");
+const multer = require("multer");
+const axios = require("axios");
+const FormData = require("form-data");
 const path = require("path");
-const crypto = require("crypto");
-const cookieParser = require("cookie-parser");
-const helmet = require("helmet");
-const rateLimit = require("express-rate-limit");
-const bcrypt = require("bcryptjs");
 
 const app = express();
 const server = http.createServer(app);
 
 const PORT = process.env.PORT || 3000;
 
-const USERS_PATH = "./users.json";
-const SESSIONS_PATH = "./sessions.json";
-const SESSION_DURATION = 1000 * 60 * 60;
-
-// ======================================================
-// SECURITY
-// ======================================================
-
-app.use(helmet());
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
 app.use(express.static("public"));
 
-// ======================================================
-// UTIL
-// ======================================================
+const upload = multer({
+  storage: multer.memoryStorage()
+});
 
-function readJSON(file, fallback) {
-  if (!fs.existsSync(file)) return fallback;
-  try { return JSON.parse(fs.readFileSync(file)); }
-  catch { return fallback; }
-}
+/* ======================================================
+   ANALYSIS PIPELINE
+====================================================== */
 
-function writeJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
+app.post("/analyze", upload.single("image"), async (req, res) => {
 
-// ======================================================
-// CREATE DEFAULT ADMIN
-// ======================================================
+  try {
 
-async function createAdmin() {
+    const { imgbb, openai, serpapi } = req.body;
 
-  const users = readJSON(USERS_PATH, []);
+    if (!openai)
+      return res.json({ error: "OpenAI key missing" });
 
-  if (users.find(u => u.username === "darkoff")) return;
+    if (!req.file)
+      return res.json({ error: "No image uploaded" });
 
-  const hash = await bcrypt.hash("Bretigny91", 10);
+    // ==================================================
+    // 1️⃣ Upload Image To ImgBB
+    // ==================================================
 
-  users.push({
-    username: "darkoff",
-    password: hash,
-    role: "admin"
-  });
+    let imageUrl = null;
 
-  writeJSON(USERS_PATH, users);
+    if (imgbb) {
 
-  console.log("✅ Admin created");
-}
+      const form = new FormData();
+      form.append("image", req.file.buffer.toString("base64"));
 
-// ======================================================
-// SESSION SYSTEM
-// ======================================================
+      const imgRes = await axios.post(
+        `https://api.imgbb.com/1/upload?key=${imgbb}`,
+        form,
+        { headers: form.getHeaders() }
+      );
 
-function getSession(token) {
+      imageUrl = imgRes.data.data.url;
 
-  if (!token) return null;
+    }
 
-  const sessions = readJSON(SESSIONS_PATH, []);
-  const session = sessions.find(s => s.token === token);
+    // ==================================================
+    // 2️⃣ OpenAI Vision Analysis
+    // ==================================================
 
-  if (!session) return null;
+    const vision = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Analyse cette image et décris le produit." },
+              { type: "image_url", image_url: { url: imageUrl } }
+            ]
+          }
+        ],
+        max_tokens: 500
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${openai}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
 
-  if (Date.now() - session.createdAt > SESSION_DURATION)
-    return null;
+    const description =
+      vision.data.choices[0].message.content;
 
-  return session;
-}
+    // ==================================================
+    // 3️⃣ SerpAPI Product Search
+    // ==================================================
 
-function requireAuth(req, res, next) {
+    let products = [];
 
-  const token = req.cookies.session;
-  const session = getSession(token);
+    if (serpapi) {
 
-  if (!session) {
-    res.clearCookie("session");
-    return res.redirect("/login.html");
+      const serp = await axios.get("https://serpapi.com/search", {
+        params: {
+          engine: "google_shopping",
+          q: description,
+          api_key: serpapi
+        }
+      });
+
+      products = serp.data.shopping_results || [];
+    }
+
+    // ==================================================
+    // 4️⃣ Filter AliExpress
+    // ==================================================
+
+    const aliProducts = products.filter(p =>
+      p.link && p.link.includes("aliexpress")
+    );
+
+    res.json({
+      image: imageUrl,
+      description,
+      aliProducts
+    });
+
+  } catch (err) {
+
+    console.error(err.response?.data || err.message);
+    res.status(500).json({ error: "Pipeline failed" });
+
   }
 
-  req.user = session;
-  next();
-}
-
-function requireAdmin(req, res, next) {
-
-  const token = req.cookies.session;
-  const session = getSession(token);
-
-  if (!session || session.role !== "admin") {
-    res.clearCookie("session");
-    return res.redirect("/login.html");
-  }
-
-  req.user = session;
-  next();
-}
-
-// ======================================================
-// ROUTES
-// ======================================================
-
-app.get("/", (req, res) => {
-  res.redirect("/login.html");
 });
 
-app.get("/dashboard", requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, "public/index.html"));
-});
-
-app.get("/admin", requireAdmin, (req, res) => {
-  res.sendFile(path.join(__dirname, "public/admin.html"));
-});
-
-// ======================================================
-// LOGIN
-// ======================================================
-
-app.post("/api/login", async (req, res) => {
-
-  const { username, password } = req.body;
-
-  const users = readJSON(USERS_PATH, []);
-  const user = users.find(u => u.username === username);
-
-  if (!user)
-    return res.status(401).json({ error: "User not found" });
-
-  const match = await bcrypt.compare(password, user.password);
-
-  if (!match)
-    return res.status(401).json({ error: "Wrong password" });
-
-  const token = crypto.randomUUID();
-  const sessions = readJSON(SESSIONS_PATH, []);
-
-  sessions.push({
-    token,
-    username,
-    role: user.role,
-    createdAt: Date.now()
-  });
-
-  writeJSON(SESSIONS_PATH, sessions);
-
-  res.cookie("session", token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "strict"
-  });
-
-  res.json({ success: true });
-});
-
-// ======================================================
-// LOGOUT
-// ======================================================
-
-app.post("/api/logout", (req, res) => {
-
-  const token = req.cookies.session;
-
-  let sessions = readJSON(SESSIONS_PATH, []);
-  sessions = sessions.filter(s => s.token !== token);
-
-  writeJSON(SESSIONS_PATH, sessions);
-
-  res.clearCookie("session");
-
-  res.json({ success: true });
-});
-
-// ======================================================
-// SAVE API KEY (ADMIN ONLY)
-// ======================================================
-
-app.post("/api/save-key", requireAdmin, (req, res) => {
-
-  const { key } = req.body;
-
-  fs.writeFileSync(
-    "apikey.json",
-    JSON.stringify({ key }, null, 2)
-  );
-
-  res.json({ success: true });
-});
-
-// ======================================================
-// START SERVER
-// ======================================================
-
-server.listen(PORT, async () => {
-  await createAdmin();
+server.listen(PORT, () => {
   console.log("🚀 Server running on port", PORT);
 });
