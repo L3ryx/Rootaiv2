@@ -4,12 +4,7 @@
 <meta charset="UTF-8">
 <title>Dashboard</title>
 <style>
-body{
-  margin:0;
-  background:black;
-  color:white;
-  font-family:Arial;
-}
+body{margin:0;background:black;color:white;font-family:Arial;}
 .topbar{
   display:flex;
   justify-content:space-between;
@@ -30,44 +25,21 @@ button{
 <body>
 
 <div class="topbar">
-  <div>
-    <button onclick="goAdmin()">Admin</button>
-  </div>
-  <div>
-    <button onclick="logout()">Déconnexion</button>
-  </div>
+  <button onclick="goAdmin()">Admin</button>
+  <button onclick="logout()">Déconnexion</button>
 </div>
 
-<h2 style="text-align:center;margin-top:50px;">Dashboard</h2>
+<h2 style="text-align:center;margin-top:50px;">Dashboard sécurisé</h2>
 
 <script>
-
-document.addEventListener("DOMContentLoaded", async ()=>{
-
-  const res = await fetch("/api/verify",{
-    credentials:"include"
-  });
-
-  if(!res.ok){
-    window.location="/login.html";
-  }
-
-});
-
 function goAdmin(){
-  window.location="/admin.html";
+  window.location="/admin";
 }
 
 async function logout(){
-
-  await fetch("/api/logout",{
-    method:"POST",
-    credentials:"include"
-  });
-
-  window.location="/login.html";
+  await fetch("/api/logout",{method:"POST",credentials:"include"});
+  window.location="/login";
 }
-
 </script>
 
 </body>
