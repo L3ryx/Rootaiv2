@@ -2,176 +2,40 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Product Finder</title>
-
-<style>
-
-body {
-  margin:0;
-  background:black;
-  color:white;
-  font-family:Arial;
-}
-
-.container {
-  height:100vh;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-}
-
-button {
-  padding:10px 20px;
-  border:none;
-  border-radius:8px;
-  font-weight:bold;
-  cursor:pointer;
-}
-
-.primary {
-  background:#00ff88;
-  color:black;
-}
-
-.settings-btn {
-  position:fixed;
-  top:20px;
-  left:20px;
-  background:#ffcc00;
-  color:black;
-}
-
-/* Popup */
-
-.popup {
-  display:none;
-  position:fixed;
-  top:50%;
-  left:50%;
-  transform:translate(-50%,-50%);
-  background:#111;
-  padding:30px;
-  border-radius:12px;
-  border:2px solid #00ff88;
-  z-index:9999;
-}
-
-.popup input {
-  width:300px;
-  padding:8px;
-  margin-bottom:10px;
-}
-
-</style>
+<title>Pipeline Tool</title>
 </head>
 <body>
 
-<!-- SETTINGS BUTTON -->
+<h1>Upload Image</h1>
 
-<button class="settings-btn" onclick="openSettings()">
-Settings
-</button>
+<input type="file" id="file">
 
-<!-- SETTINGS POPUP -->
-
-<div class="popup" id="settingsPopup">
-
-<h3>API Keys</h3>
-
-<p>IMGBB</p>
-<input type="text" id="imgbb">
-
-<p>OPENAI</p>
-<input type="text" id="openai">
-
-<p>SERPAPI</p>
+<p>SerpAPI Key</p>
 <input type="text" id="serpapi">
 
-<br>
+<p>OpenAI Key</p>
+<input type="text" id="openai">
 
-<button class="primary" onclick="saveSettings()">
-Save
-</button>
-
-<button onclick="closeSettings()" style="background:red;color:white;">
-Close
-</button>
-
-</div>
-
-<!-- MAIN -->
-
-<div class="container">
-
-<h1>AI Product Finder</h1>
-
-<input type="file" id="fileInput">
 <br><br>
 
-<button class="primary" onclick="analyze()">
-Analyze Image
-</button>
+<button onclick="analyze()">Start</button>
 
-<br>
+<h2>Results</h2>
+<pre id="result"></pre>
 
-<div id="result"></div>
-
-</div>
+<h2>Live Logs</h2>
+<pre id="logs"></pre>
 
 <script>
 
-/* ================= SETTINGS ================= */
-
-function openSettings() {
-
-  document.getElementById("settingsPopup").style.display = "block";
-
-  document.getElementById("imgbb").value =
-    window.currentKeys?.imgbb || "";
-
-  document.getElementById("openai").value =
-    window.currentKeys?.openai || "";
-
-  document.getElementById("serpapi").value =
-    window.currentKeys?.serpapi || "";
-}
-
-function closeSettings() {
-  document.getElementById("settingsPopup").style.display = "none";
-}
-
-function saveSettings() {
-
-  window.currentKeys = {
-    imgbb: document.getElementById("imgbb").value,
-    openai: document.getElementById("openai").value,
-    serpapi: document.getElementById("serpapi").value
-  };
-
-  alert("Keys stored temporarily !");
-  closeSettings();
-}
-
-/* ================= ANALYZE ================= */
-
 async function analyze() {
 
-  const fileInput = document.getElementById("fileInput");
-
-  if (!fileInput.files.length) {
-    alert("Select image");
-    return;
-  }
+  const file = document.getElementById("file").files[0];
 
   const formData = new FormData();
-
-  formData.append("image", fileInput.files[0]);
-
-  formData.append("imgbb", window.currentKeys?.imgbb || "");
-  formData.append("openai", window.currentKeys?.openai || "");
-  formData.append("serpapi", window.currentKeys?.serpapi || "");
+  formData.append("image", file);
+  formData.append("serpapi", document.getElementById("serpapi").value);
+  formData.append("openai", document.getElementById("openai").value);
 
   const res = await fetch("/analyze", {
     method: "POST",
@@ -180,9 +44,22 @@ async function analyze() {
 
   const data = await res.json();
 
-  document.getElementById("result").innerHTML =
-    "<pre>" + JSON.stringify(data, null, 2) + "</pre>";
+  document.getElementById("result").innerText =
+    JSON.stringify(data, null, 2);
+
+  loadLogs();
 }
+
+async function loadLogs() {
+
+  const res = await fetch("/logs");
+  const logs = await res.json();
+
+  document.getElementById("logs").innerText =
+    JSON.stringify(logs, null, 2);
+}
+
+setInterval(loadLogs, 5000);
 
 </script>
 
