@@ -10,68 +10,30 @@ app.use(express.json());
 app.use(express.static("public"));
 
 /*
-==================================================
-UTILITY : IMAGE TO BASE64
-==================================================
-*/
-function imageToBase64(buffer) {
-  return buffer.toString("base64");
-}
-
-/*
-==================================================
-IA IMAGE SIMILARITY (OPENAI VISION)
-==================================================
-*/
-async function getImageDescription(base64Image) {
-  const response = await axios.post(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Describe this product image in detail." },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${base64Image}`
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
-      }
-    }
-  );
-
-  return response.data.choices[0].message.content;
-}
-
-/*
-==================================================
-PIPELINE ROUTE
-==================================================
+====================================================
+IMAGE ANALYSIS PIPELINE
+====================================================
 */
 app.post("/analyze", upload.array("images"), async (req, res) => {
-  const finalResults = [];
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ error: "No images uploaded" });
+  }
+
+  const results = [];
 
   for (const file of req.files) {
     try {
-      const base64Image = imageToBase64(file.buffer);
+      console.log("Analyzing:", file.originalname);
+
+      const base64Image = file.buffer.toString("base64");
 
       /*
-      ==========================================
-      1️⃣ ZENSERP IMAGE SEARCH
-      ==========================================
+      ====================================================
+      1️⃣ ZENSERP REVERSE IMAGE SEARCH
+      ====================================================
       */
 
-      const zenserp = await axios.get(
+      const zenserpResponse = await axios.get(
         "https://app.zenserp.com/api/v2/search",
         {
           params: {
@@ -82,107 +44,82 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
         }
       );
 
-      const links = zenserp.data.organic || [];
+      const organic = zenserpResponse.data.organic || [];
 
-      const aliexpressLinks = links
-        .map(r => r.link)
-        .filter(l => l && l.includes("aliexpress.com"));
+      const aliexpressLinks = organic
+        .map(item => item.link)
+        .filter(link => link && link.includes("aliexpress.com"));
+
+      console.log("AliExpress Links:", aliexpressLinks);
 
       /*
-      ==========================================
-      2️⃣ SCRAPERAPI SCRAPE PRODUCTS
-      ==========================================
+      ====================================================
+      2️⃣ SCRAPERAPI SCRAPE PRODUITS
+      ====================================================
       */
 
-      const scrapedProducts = [];
+      const products = [];
 
       for (const link of aliexpressLinks) {
         try {
-          const scrape = await axios.get("http://api.scraperapi.com", {
-            params: {
-              api_key: process.env.SCRAPERAPI_KEY,
-              url: link,
-              render: true
+          const scrapeResponse = await axios.get(
+            "http://api.scraperapi.com",
+            {
+              params: {
+                api_key: process.env.SCRAPERAPI_KEY,
+                url: link,
+                render: true
+              }
             }
-          });
+          );
 
-          const html = scrape.data;
+          const html = scrapeResponse.data;
 
           const titleMatch = html.match(/<title>(.*?)<\/title>/);
-          const priceMatch = html.match(/"productPrice":"(.*?)"/);
+          const priceMatch = html.match(/"price":"(.*?)"/);
 
-          scrapedProducts.push({
+          products.push({
             url: link,
             title: titleMatch ? titleMatch[1] : "Unknown",
             price: priceMatch ? priceMatch[1] : "Unknown"
           });
+
         } catch (err) {
-          console.log("Scraping failed for:", link);
+          console.log("Scraper failed for:", link);
         }
       }
 
       /*
-      ==========================================
-      3️⃣ IA IMAGE SIMILARITY
-      ==========================================
+      ====================================================
+      3️⃣ RESULT FINAL
+      ====================================================
       */
 
-      const description = await getImageDescription(base64Image);
-
-      /*
-      ==========================================
-      4️⃣ FILTRAGE INTELLIGENT
-      ==========================================
-      */
-
-      const filteredProducts = scrapedProducts.filter(product => {
-        const score = similarityScore(description, product.title);
-
-        return score > 0.5; // seuil de filtrage
-      });
-
-      /*
-      ==========================================
-      5️⃣ RESULT
-      ==========================================
-      */
-
-      finalResults.push({
+      results.push({
         image: file.originalname,
-        description,
-        products: filteredProducts
+        products
       });
 
     } catch (err) {
-      finalResults.push({
+      console.log("Pipeline error:", err.message);
+
+      results.push({
         image: file.originalname,
-        error: "Pipeline failed"
+        products: []
       });
     }
   }
 
-  res.json({ results: finalResults });
+  res.json({ results });
 });
 
 /*
-==================================================
-SIMPLE TEXT SIMILARITY SCORE
-==================================================
-*/
-function similarityScore(text1, text2) {
-  const words1 = text1.toLowerCase().split(" ");
-  const words2 = text2.toLowerCase().split(" ");
-
-  const intersection = words1.filter(word => words2.includes(word));
-  return intersection.length / Math.max(words1.length, 1);
-}
-
-/*
-==================================================
+====================================================
 START SERVER
-==================================================
+====================================================
 */
+const PORT = process.env.PORT || 3000;
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log("Server running");
+app.listen(PORT, () => {
+  console.log("Server running on port", PORT);
 });
