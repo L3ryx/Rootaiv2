@@ -1,6 +1,5 @@
 // ======================================================
-// ALI SEARCH AI
-// SERVER VERSION PRO FINAL
+// ALI SEARCH AI - FULL PRO SERVER
 // ======================================================
 
 const express = require("express");
@@ -12,6 +11,7 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcrypt");
 const CryptoJS = require("crypto-js");
+const crypto = require("crypto");
 
 const app = express();
 const server = http.createServer(app);
@@ -20,43 +20,72 @@ const io = new Server(server);
 const PORT = 3000;
 
 const CONFIG_PATH = "./config.json";
+const USERS_PATH = "./users.json";
+const SESSIONS_PATH = "./sessions.json";
 const LOG_PATH = "./logs.json";
 
-const SECRET_KEY = "CHANGE_THIS_SECRET_KEY";
-
-const ADMIN_PASSWORD = "admin123"; // 🔐 CHANGE THIS
+const SECRET_KEY = "CHANGE_THIS_SECRET";
+const ADMIN_PASSWORD = "admin123";
 
 // ======================================================
-// CONFIG SYSTEM (ENCRYPTED)
+// UTILS
+// ======================================================
+
+function readJSON(file, fallback) {
+  if (!fs.existsSync(file)) return fallback;
+  return JSON.parse(fs.readFileSync(file));
+}
+
+function writeJSON(file, data) {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+// ======================================================
+// CONFIG ENCRYPTED
 // ======================================================
 
 function getConfig() {
-
   if (!fs.existsSync(CONFIG_PATH)) return {};
-
   const encrypted = fs.readFileSync(CONFIG_PATH, "utf8");
   if (!encrypted) return {};
-
   try {
-
     const bytes = CryptoJS.AES.decrypt(encrypted, SECRET_KEY);
-    const decrypted = bytes.toString(CryptoJS.enc.Utf8);
-
-    return JSON.parse(decrypted || "{}");
-
-  } catch (err) {
+    return JSON.parse(bytes.toString(CryptoJS.enc.Utf8) || "{}");
+  } catch {
     return {};
   }
 }
 
 function saveConfig(config) {
-
   const encrypted = CryptoJS.AES.encrypt(
     JSON.stringify(config),
     SECRET_KEY
   ).toString();
-
   fs.writeFileSync(CONFIG_PATH, encrypted);
+}
+
+// ======================================================
+// USERS SYSTEM
+// ======================================================
+
+function getUsers() {
+  return readJSON(USERS_PATH, []);
+}
+
+function saveUsers(users) {
+  writeJSON(USERS_PATH, users);
+}
+
+// ======================================================
+// SESSIONS
+// ======================================================
+
+function getSessions() {
+  return readJSON(SESSIONS_PATH, []);
+}
+
+function saveSessions(sessions) {
+  writeJSON(SESSIONS_PATH, sessions);
 }
 
 // ======================================================
@@ -64,19 +93,9 @@ function saveConfig(config) {
 // ======================================================
 
 function saveLog(message) {
-
-  let logs = [];
-
-  if (fs.existsSync(LOG_PATH)) {
-    logs = JSON.parse(fs.readFileSync(LOG_PATH));
-  }
-
-  logs.push({
-    message,
-    time: new Date()
-  });
-
-  fs.writeFileSync(LOG_PATH, JSON.stringify(logs, null, 2));
+  let logs = readJSON(LOG_PATH, []);
+  logs.push({ message, time: new Date() });
+  writeJSON(LOG_PATH, logs);
 }
 
 // ======================================================
@@ -86,23 +105,90 @@ function saveLog(message) {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const uploadDir = path.join(__dirname, "uploads");
-
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+const uploadDir = "./uploads";
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
 const upload = multer({
   storage: multer.diskStorage({
     destination: uploadDir,
-    filename: (req, file, cb) => {
-      cb(null, Date.now() + "-" + file.originalname);
-    }
+    filename: (req, file, cb) =>
+      cb(null, Date.now() + "-" + file.originalname)
   })
 });
 
 app.use("/uploads", express.static(uploadDir));
 app.use(express.static("public"));
+
+// ======================================================
+// REGISTER
+// ======================================================
+
+app.post("/api/register", async (req, res) => {
+
+  const { username, password } = req.body;
+  const users = getUsers();
+
+  if (users.find(u => u.username === username)) {
+    return res.status(400).json({ error: "User exists" });
+  }
+
+  const hash = await bcrypt.hash(password, 10);
+
+  users.push({
+    username,
+    password: hash,
+    createdAt: new Date()
+  });
+
+  saveUsers(users);
+
+  res.json({ success: true });
+
+});
+
+// ======================================================
+// LOGIN
+// ======================================================
+
+app.post("/api/login", async (req, res) => {
+
+  const { username, password } = req.body;
+
+  const users = getUsers();
+  const user = users.find(u => u.username === username);
+
+  if (!user) return res.status(404).json({ error: "Not found" });
+
+  const match = await bcrypt.compare(password, user.password);
+
+  if (!match) return res.status(401).json({ error: "Wrong password" });
+
+  const token = crypto.randomUUID();
+
+  let sessions = getSessions();
+  sessions.push({ token, username, createdAt: new Date() });
+  saveSessions(sessions);
+
+  res.json({ token });
+
+});
+
+// ======================================================
+// LOGOUT
+// ======================================================
+
+app.post("/api/logout", (req, res) => {
+
+  const { token } = req.body;
+
+  let sessions = getSessions();
+  sessions = sessions.filter(s => s.token !== token);
+
+  saveSessions(sessions);
+
+  res.json({ success: true });
+
+});
 
 // ======================================================
 // ADMIN LOGIN
@@ -117,25 +203,21 @@ app.post("/admin/login", async (req, res) => {
     bcrypt.hashSync(ADMIN_PASSWORD, 10)
   );
 
-  if (!match) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
+  if (!match) return res.status(401).json({ error: "Unauthorized" });
 
   res.json({ success: true });
 
 });
 
 // ======================================================
-// CONFIG ROUTES (PROTECTED)
+// CONFIG ROUTES
 // ======================================================
 
 app.get("/api/config", (req, res) => {
 
   const password = req.query.password;
-
-  if (password !== ADMIN_PASSWORD) {
+  if (password !== ADMIN_PASSWORD)
     return res.status(403).json({ error: "Unauthorized" });
-  }
 
   res.json(getConfig());
 
@@ -145,46 +227,47 @@ app.post("/api/config", (req, res) => {
 
   const { password, config } = req.body;
 
-  if (password !== ADMIN_PASSWORD) {
+  if (password !== ADMIN_PASSWORD)
     return res.status(403).json({ error: "Unauthorized" });
-  }
 
   saveConfig(config);
-
   res.json({ success: true });
 
 });
 
 // ======================================================
-// LOG ROUTE
+// LOGS
 // ======================================================
 
 app.get("/api/logs", (req, res) => {
 
   const password = req.query.password;
-
-  if (password !== ADMIN_PASSWORD) {
+  if (password !== ADMIN_PASSWORD)
     return res.status(403).json({ error: "Unauthorized" });
-  }
 
-  if (!fs.existsSync(LOG_PATH)) {
-    return res.json([]);
-  }
+  res.json(readJSON(LOG_PATH, []));
 
-  const logs = JSON.parse(fs.readFileSync(LOG_PATH));
+});
 
-  res.json(logs);
+app.post("/api/logs/clear", (req, res) => {
+
+  const { password } = req.body;
+
+  if (password !== ADMIN_PASSWORD)
+    return res.status(403).json({ error: "Unauthorized" });
+
+  writeJSON(LOG_PATH, []);
+  res.json({ success: true });
 
 });
 
 // ======================================================
-// ANALYZE ROUTE
+// ANALYZE
 // ======================================================
 
 app.post("/analyze", upload.array("images"), async (req, res) => {
 
   const config = getConfig();
-
   const results = [];
 
   for (const file of req.files) {
@@ -192,7 +275,7 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
     const publicUrl =
       `${req.protocol}://${req.get("host")}/uploads/${file.filename}`;
 
-    saveLog("Analyzing image: " + file.filename);
+    saveLog("Analyzing " + file.filename);
 
     let serpResults = [];
 
@@ -211,19 +294,10 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
       serpResults = response.data?.image_results || [];
 
-      saveLog("SerpAPI returned " + serpResults.length + " results");
-
-    } catch (err) {
-
-      saveLog("SerpAPI error: " + err.message);
-
-      serpResults = [];
-
-    }
+    } catch {}
 
     const matches = serpResults
       .filter(r => r.link?.includes("aliexpress.com"))
-      .slice(0, 5)
       .map(r => ({
         url: r.link,
         similarity: 70
@@ -231,7 +305,6 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
     results.push({
       image: file.filename,
-      publicUrl,
       matches
     });
 
@@ -242,18 +315,9 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 });
 
 // ======================================================
-// SOCKET
-// ======================================================
-
-io.on("connection", (socket) => {
-  socket.emit("connected", { socketId: socket.id });
-  console.log("🟢 Client connected");
-});
-
-// ======================================================
-// START SERVER
+// START
 // ======================================================
 
 server.listen(PORT, () => {
-  console.log("🚀 Server running on port " + PORT);
+  console.log("🚀 Server running");
 });
