@@ -1,243 +1,153 @@
-require("dotenv").config();
+// ======================================================
+// UPLOAD → SERPAPI → FILTER → OPENAI COMPARE → LOGS
+// ======================================================
+
 const express = require("express");
 const multer = require("multer");
 const axios = require("axios");
-const http = require("http");
-const { Server } = require("socket.io");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
-
-const upload = multer({
-  storage: multer.memoryStorage()
-});
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
-/*
-====================================================
-LOG SYSTEM
-====================================================
-*/
+const upload = multer({
+  storage: multer.memoryStorage()
+});
 
-function sendLog(socket, message, type = "info") {
+/* ======================================================
+   ANALYSIS PIPELINE
+====================================================== */
 
-  console.log(`[${type}] ${message}`);
+app.post("/analyze", upload.single("image"), async (req, res) => {
 
-  if (socket) {
-    socket.emit("log", {
-      message,
-      type,
-      time: new Date().toISOString()
-    });
-  }
-}
+  try {
 
-/*
-====================================================
-UPLOAD IMAGE TO IMGBB (TO FIX 414)
-====================================================
-*/
+    const { serpapi, openai } = req.body;
 
-async function uploadToImgBB(imageBuffer) {
+    if (!req.file)
+      return res.json({ error: "No image uploaded" });
 
-  const base64 = imageBuffer.toString("base64");
+    if (!serpapi || !openai)
+      return res.json({ error: "Missing API keys" });
 
-  const response = await axios.post(
-    "https://api.imgbb.com/1/upload",
-    new URLSearchParams({
-      key: process.env.IMGBB_KEY,
-      image: base64
-    }),
-    {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
+    // ==================================================
+    // 1️⃣ Send Image To SerpAPI (Reverse Search)
+    // ==================================================
+
+    const imageBase64 = req.file.buffer.toString("base64");
+
+    const serpResponse = await axios.post(
+      "https://serpapi.com/search",
+      null,
+      {
+        params: {
+          engine: "google_lens",
+          image_url: `data:image/jpeg;base64,${imageBase64}`,
+          api_key: serpapi
+        }
       }
-    }
-  );
+    );
 
-  return response.data.data.url;
-}
+    const results = serpResponse.data.visual_matches || [];
 
-/*
-====================================================
-SIMILARITY
-====================================================
-*/
+    // ==================================================
+    // 2️⃣ Filter AliExpress Products
+    // ==================================================
 
-async function calculateSimilarity(base64A, base64B) {
+    const aliProducts = results.filter(p =>
+      p.link && p.link.includes("aliexpress")
+    );
 
-  const response = await axios.post(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      model: "gpt-4o-mini",
-      messages: [
+    // ==================================================
+    // 3️⃣ OpenAI Product Comparison
+    // ==================================================
+
+    let comparison = null;
+
+    if (aliProducts.length > 0) {
+
+      const ai = await axios.post(
+        "https://api.openai.com/v1/chat/completions",
         {
-          role: "user",
-          content: [
-            { type: "text", text: "Return only similarity 0 to 1." },
+          model: "gpt-4o-mini",
+          messages: [
             {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${base64A}`
-              }
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${base64B}`
-              }
+              role: "user",
+              content: `
+Compare these AliExpress products:
+
+${JSON.stringify(aliProducts.slice(0, 5), null, 2)}
+
+Return:
+- Best product
+- Price comparison
+- Recommendation
+`
             }
           ]
-        }
-      ]
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
-      }
-    }
-  );
-
-  const text = response.data.choices[0].message.content;
-  const match = text.match(/0\.\d+|1(\.0+)?/);
-
-  return match ? parseFloat(match[0]) : 0;
-}
-
-/*
-====================================================
-ANALYZE ROUTE
-====================================================
-*/
-
-app.post("/analyze", upload.array("images"), async (req, res) => {
-
-  const socketId = req.body.socketId;
-  const socket = io.sockets.sockets.get(socketId);
-
-  const results = [];
-
-  for (const file of req.files) {
-
-    sendLog(socket, `🖼 Processing ${file.originalname}`);
-
-    /*
-    ============================================
-    STEP 1 — UPLOAD IMAGE TO GET PUBLIC URL
-    ============================================
-    */
-
-    let publicImageUrl;
-
-    try {
-
-      sendLog(socket, "📤 Uploading image to ImgBB");
-
-      publicImageUrl = await uploadToImgBB(file.buffer);
-
-      sendLog(socket, "✅ Image uploaded successfully");
-
-    } catch (err) {
-
-      sendLog(socket, "❌ Image upload failed", "error");
-
-      continue;
-    }
-
-    /*
-    ============================================
-    STEP 2 — CALL SERPAPI WITH IMAGE URL
-    ============================================
-    */
-
-    sendLog(socket, "🔎 Calling SerpAPI");
-
-    let serpResults = [];
-
-    try {
-
-      const response = await axios.get(
-        "https://serpapi.com/search",
+        },
         {
-          params: {
-            engine: "google_reverse_image",
-            image_url: publicImageUrl,
-            api_key: process.env.SERPAPI_KEY
+          headers: {
+            Authorization: `Bearer ${openai}`,
+            "Content-Type": "application/json"
           }
         }
       );
 
-      serpResults = response.data?.image_results || [];
-
-      sendLog(socket, `📦 ${serpResults.length} results found`);
-
-    } catch (err) {
-
-      sendLog(
-        socket,
-        `❌ SerpAPI error | ${err.response?.status}`,
-        "error"
-      );
-
-      serpResults = [];
+      comparison = ai.data.choices[0].message.content;
     }
 
-    /*
-    ============================================
-    STEP 3 — FILTER ALIEXPRESS
-    ============================================
-    */
+    // ==================================================
+    // 4️⃣ Logs Live
+    // ==================================================
 
-    const aliexpressLinks = serpResults
-      .filter(r => r.link?.includes("aliexpress.com"))
-      .slice(0, 10);
+    const log = {
+      time: new Date(),
+      totalProducts: aliProducts.length
+    };
 
-    const matches = [];
+    fs.appendFileSync("logs.json", JSON.stringify(log) + "\n");
 
-    for (const item of aliexpressLinks) {
+    // ==================================================
+    // 5️⃣ RESPONSE
+    // ==================================================
 
-      matches.push({
-        url: item.link,
-        similarity: 70 // placeholder (tu peux remettre ton IA ici)
-      });
-
-    }
-
-    results.push({
-      image: file.originalname,
-      matches
+    res.json({
+      products: aliProducts,
+      comparison
     });
+
+  } catch (err) {
+
+    console.error(err.response?.data || err.message);
+    res.status(500).json({ error: "Pipeline failed" });
+
   }
 
-  res.json({ results });
 });
 
-/*
-====================================================
-SOCKET
-====================================================
-*/
+/* ======================================================
+   LOGS LIVE
+====================================================== */
 
-io.on("connection", (socket) => {
+app.get("/logs", (req, res) => {
 
-  socket.emit("connected", {
-    socketId: socket.id
-  });
+  if (!fs.existsSync("logs.json"))
+    return res.json([]);
 
-  console.log("🟢 Client connected");
+  const logs = fs.readFileSync("logs.json", "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map(line => JSON.parse(line));
 
+  res.json(logs);
 });
 
-/*
-====================================================
-START
-====================================================
-*/
-
-server.listen(process.env.PORT || 3000, () => {
-  console.log("🚀 Server running");
+app.listen(PORT, () => {
+  console.log("🚀 Server running on port", PORT);
 });
