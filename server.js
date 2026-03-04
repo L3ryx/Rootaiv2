@@ -19,26 +19,34 @@ app.use(express.static("public"));
 
 /*
 ====================================================
-LOG SYSTEM
+LOG SYSTEM (WITH ERROR DETAIL)
 ====================================================
 */
 
-function sendLog(socket, message, type = "info") {
+function sendLog(socket, message, type = "info", errorDetails = null) {
 
-  console.log(`[${type}] ${message}`);
+  const payload = {
+    message,
+    type,
+    time: new Date().toISOString(),
+    errorDetails
+  };
+
+  console.log(`[${type.toUpperCase()}] ${message}`);
+
+  if (errorDetails) {
+    console.log("🔴 ERROR DETAILS:");
+    console.log(errorDetails);
+  }
 
   if (socket) {
-    socket.emit("log", {
-      message,
-      type,
-      time: new Date().toISOString()
-    });
+    socket.emit("log", payload);
   }
 }
 
 /*
 ====================================================
-SIMILARITY
+SIMILARITY FUNCTION
 ====================================================
 */
 
@@ -88,7 +96,17 @@ async function calculateSimilarity(base64A, base64B, socket) {
 
   } catch (err) {
 
-    sendLog(socket, `❌ Similarity failed`, "error");
+    sendLog(
+      socket,
+      "❌ Similarity API failed",
+      "error",
+      {
+        status: err.response?.status,
+        data: err.response?.data,
+        message: err.message,
+        url: err.config?.url
+      }
+    );
 
     return 0;
   }
@@ -96,7 +114,7 @@ async function calculateSimilarity(base64A, base64B, socket) {
 
 /*
 ====================================================
-ANALYZE ROUTE — SCRAPER METHOD
+ANALYZE ROUTE
 ====================================================
 */
 
@@ -119,25 +137,22 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
     /*
     =====================================================
-    STEP 1 — SEARCH IMAGE VIA SCRAPER (NOT API)
+    SCRAPER REQUEST
     =====================================================
     */
 
-    sendLog(socket, "🔎 Searching via page scraping");
+    sendLog(socket, "🔎 Calling ScraperAPI");
 
     let html = "";
 
     try {
-
-      const searchUrl =
-        "https://www.aliexpress.com/wholesale?SearchText=product";
 
       const response = await axios.get(
         "http://api.scraperapi.com",
         {
           params: {
             api_key: process.env.SCRAPERAPI_KEY,
-            url: searchUrl,
+            url: "https://www.aliexpress.com/wholesale?SearchText=test",
             render: true
           }
         }
@@ -147,7 +162,17 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
     } catch (err) {
 
-      sendLog(socket, "❌ Scraper failed", "error");
+      sendLog(
+        socket,
+        "❌ Scraper request failed",
+        "error",
+        {
+          status: err.response?.status,
+          data: err.response?.data,
+          message: err.message,
+          url: err.config?.url
+        }
+      );
 
       results.push({
         image: file.originalname,
@@ -159,40 +184,52 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
     /*
     =====================================================
-    STEP 2 — EXTRACT PRODUCTS FROM APOLLO STATE
+    EXTRACT APOLLO STATE
     =====================================================
     */
 
-    sendLog(socket, "📦 Extracting products from page");
+    sendLog(socket, "📦 Extracting products from HTML");
 
-    const jsonMatch =
-      html.match(/window\.__APOLLO_STATE__\s*=\s*(\{.*?\});/s);
+    const match = html.match(
+      /window\.__APOLLO_STATE__\s*=\s*(\{.*?\});/s
+    );
 
     let products = [];
 
-    if (jsonMatch) {
+    if (!match) {
+
+      sendLog(
+        socket,
+        "⚠ Apollo state not found in page",
+        "warning"
+      );
+
+    } else {
 
       try {
 
-        const state = JSON.parse(jsonMatch[1]);
+        const state = JSON.parse(match[1]);
 
-        const productKeys = Object.keys(state)
-          .filter(k => k.includes("Product"));
+        const keys = Object.keys(state).filter(k =>
+          k.includes("Product")
+        );
 
-        products = productKeys.map(k => {
-
-          const p = state[k];
-
-          return {
-            productId: p.productId,
-            imageUrl: p.imageUrl
-          };
-
-        }).filter(p => p.productId);
+        products = keys.map(k => ({
+          productId: state[k].productId,
+          imageUrl: state[k].imageUrl
+        })).filter(p => p.productId);
 
       } catch (err) {
 
-        sendLog(socket, "❌ Failed parsing Apollo state", "error");
+        sendLog(
+          socket,
+          "❌ Failed parsing Apollo JSON",
+          "error",
+          {
+            message: err.message
+          }
+        );
+
       }
     }
 
@@ -200,26 +237,23 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
     /*
     =====================================================
-    STEP 3 — COMPARE PRODUCTS
+    COMPARE PRODUCTS
     =====================================================
     */
 
     const matched = [];
 
-    const topProducts = products.slice(0, 10);
+    for (const product of products.slice(0, 10)) {
 
-    for (const product of topProducts) {
+      sendLog(socket, `🔍 Checking product ${product.productId}`);
 
-      const productUrl =
-        "https://www.aliexpress.com/item/" +
-        product.productId +
-        ".html";
+      if (!product.imageUrl) {
 
-      sendLog(socket, `🔍 Checking ${product.productId}`);
+        sendLog(socket, "⚠ Product missing imageUrl", "warning");
+        continue;
+      }
 
       try {
-
-        if (!product.imageUrl) continue;
 
         const img = await axios.get(product.imageUrl, {
           responseType: "arraybuffer"
@@ -241,15 +275,30 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
           sendLog(socket, `✅ Match ${similarity}%`, "success");
 
           matched.push({
-            url: productUrl,
+            url:
+              "https://www.aliexpress.com/item/" +
+              product.productId +
+              ".html",
             similarity
           });
+
+        } else {
+
+          sendLog(socket, `❌ Rejected ${similarity}%`, "info");
         }
 
-      } catch {
+      } catch (err) {
 
-        sendLog(socket, "❌ Product comparison failed", "error");
-
+        sendLog(
+          socket,
+          "❌ Product image download failed",
+          "error",
+          {
+            status: err.response?.status,
+            message: err.message,
+            url: product.imageUrl
+          }
+        );
       }
     }
 
@@ -259,7 +308,6 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
         (a, b) => b.similarity - a.similarity
       )
     });
-
   }
 
   res.json({ results });
