@@ -1,5 +1,5 @@
 // ======================================================
-// ALI SEARCH AI - SERVER CLEAN FINAL
+// ALI SEARCH AI - SERVER UPDATED WITH AUTO ADMIN
 // ======================================================
 
 const express = require("express");
@@ -18,7 +18,7 @@ const server = http.createServer(app);
 const PORT = 3000;
 
 const SECRET_KEY = "CHANGE_THIS_SECRET";
-const ADMIN_PASSWORD = "admin123";
+const ADMIN_PASSWORD = "admin123"; // ⚡ Default system password (not used for login)
 
 const CONFIG_PATH = "./config.json";
 const USERS_PATH = "./users.json";
@@ -39,11 +39,42 @@ function writeJSON(file, data) {
 }
 
 // ======================================================
+// AUTO CREATE ADMIN (darkoff)
+// ======================================================
+
+async function createDefaultAdmin() {
+
+  const users = readJSON(USERS_PATH, []);
+
+  const adminExists = users.find(u => u.username === "darkoff");
+
+  if (adminExists) {
+    console.log("✅ Admin already exists");
+    return;
+  }
+
+  const hash = await bcrypt.hash("Bretigny91", 10);
+
+  users.push({
+    username: "darkoff",
+    password: hash,
+    role: "admin",
+    createdAt: new Date()
+  });
+
+  writeJSON(USERS_PATH, users);
+
+  console.log("🚀 Default admin created (darkoff)");
+
+}
+
+// ======================================================
 // CONFIG ENCRYPTED
 // ======================================================
 
 function getConfig() {
   if (!fs.existsSync(CONFIG_PATH)) return {};
+
   try {
     const encrypted = fs.readFileSync(CONFIG_PATH, "utf8");
     const bytes = CryptoJS.AES.decrypt(encrypted, SECRET_KEY);
@@ -69,17 +100,6 @@ function saveConfig(config) {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static("public"));
-app.get("/login", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/login.html"));
-});
-
-app.get("/register", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/register.html"));
-});
-
-app.get("/admin", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/admin.html"));
-});
 
 const uploadDir = "./uploads";
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
@@ -95,12 +115,12 @@ const upload = multer({
 app.use("/uploads", express.static(uploadDir));
 
 // ======================================================
-// REGISTER (ROLE SUPPORTED)
+// REGISTER (FORCE ROLE USER)
 // ======================================================
 
 app.post("/api/register", async (req, res) => {
 
-  const { username, password, role } = req.body;
+  const { username, password } = req.body;
 
   const users = readJSON(USERS_PATH, []);
 
@@ -113,7 +133,7 @@ app.post("/api/register", async (req, res) => {
   users.push({
     username,
     password: hash,
-    role: role || "user",
+    role: "user",
     createdAt: new Date()
   });
 
@@ -133,11 +153,13 @@ app.post("/api/login", async (req, res) => {
   const users = readJSON(USERS_PATH, []);
   const user = users.find(u => u.username === username);
 
-  if (!user) return res.status(404).json({ error: "Not found" });
+  if (!user)
+    return res.status(404).json({ error: "User not found" });
 
   const match = await bcrypt.compare(password, user.password);
 
-  if (!match) return res.status(401).json({ error: "Wrong password" });
+  if (!match)
+    return res.status(401).json({ error: "Wrong password" });
 
   const token = crypto.randomUUID();
 
@@ -146,14 +168,14 @@ app.post("/api/login", async (req, res) => {
   sessions.push({
     token,
     username,
-    role: user.role || "user"
+    role: user.role
   });
 
   writeJSON(SESSIONS_PATH, sessions);
 
   res.json({
     token,
-    role: user.role || "user"
+    role: user.role
   });
 });
 
@@ -166,6 +188,7 @@ app.post("/api/logout", (req, res) => {
   const { token } = req.body;
 
   let sessions = readJSON(SESSIONS_PATH, []);
+
   sessions = sessions.filter(s => s.token !== token);
 
   writeJSON(SESSIONS_PATH, sessions);
@@ -174,32 +197,14 @@ app.post("/api/logout", (req, res) => {
 });
 
 // ======================================================
-// ADMIN LOGIN
-// ======================================================
-
-app.post("/admin/login", async (req, res) => {
-
-  const { password } = req.body;
-
-  const match = await bcrypt.compare(
-    password,
-    bcrypt.hashSync(ADMIN_PASSWORD, 10)
-  );
-
-  if (!match) return res.status(401).json({ error: "Unauthorized" });
-
-  res.json({ success: true });
-});
-
-// ======================================================
-// ADMIN ROUTES
+// ADMIN GET USERS
 // ======================================================
 
 app.get("/api/users", (req, res) => {
 
   const password = req.query.password;
 
-  if (password !== ADMIN_PASSWORD)
+  if (password !== "darkoff")
     return res.status(403).json({ error: "Unauthorized" });
 
   res.json(readJSON(USERS_PATH, []));
@@ -236,7 +241,9 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
       serpResults = response.data?.image_results || [];
 
-    } catch {}
+    } catch (err) {
+      console.log("SerpAPI Error:", err.message);
+    }
 
     const matches = serpResults
       .filter(r => r.link?.includes("aliexpress.com"))
@@ -258,6 +265,9 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 // START SERVER
 // ======================================================
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
+
+  await createDefaultAdmin(); // 🔥 Auto create admin
+
   console.log("🚀 Server running on port", PORT);
 });
