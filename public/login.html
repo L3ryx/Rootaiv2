@@ -14,7 +14,7 @@ body{
   color:white;
   font-family:Arial;
 }
-.login-box{
+.box{
   background:#111;
   padding:40px;
   border-radius:12px;
@@ -44,7 +44,7 @@ button{
 </head>
 <body>
 
-<div class="login-box">
+<div class="box">
   <h2>Connexion</h2>
   <input id="username" placeholder="Utilisateur">
   <input id="password" type="password" placeholder="Mot de passe">
@@ -72,7 +72,7 @@ async function login(){
     return;
   }
 
-  window.location="/index.html";
+  window.location="/dashboard";
 }
 </script>
 
