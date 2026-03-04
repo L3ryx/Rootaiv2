@@ -3,39 +3,46 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Login - Ali Search AI</title>
+<title>Connexion - Ali Search AI</title>
 
 <style>
 
 /* ============================= */
-/* BACKGROUND FROM GITHUB */
+/* GLOBAL */
 /* ============================= */
 
-body {
+body{
   margin:0;
-  padding:0;
-  font-family: Arial, sans-serif;
-
+  font-family:Arial, sans-serif;
+  background:black;
+  color:white;
   display:flex;
   justify-content:center;
   align-items:center;
   height:100vh;
-
-  background: url("https://raw.githubusercontent.com/TON_USERNAME/assets-login/main/background-login.jpg");
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
+  overflow:hidden;
 }
 
-/* Dark overlay */
-body::before {
-  content:"";
-  position:absolute;
+/* ============================= */
+/* MATRIX BACKGROUND */
+/* ============================= */
+
+#matrix{
+  position:fixed;
   top:0;
   left:0;
   width:100%;
   height:100%;
-  background:rgba(0,0,0,0.6);
+  z-index:-2;
+}
+
+.overlay{
+  position:fixed;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  background:rgba(0,0,0,0.7);
   z-index:-1;
 }
 
@@ -43,111 +50,175 @@ body::before {
 /* LOGIN BOX */
 /* ============================= */
 
-.login-box {
-  background: rgba(17,17,17,0.9);
+.login-box{
+  background:rgba(0,0,0,0.85);
   padding:40px;
-  border-radius:15px;
+  border-radius:16px;
   width:350px;
   text-align:center;
-  box-shadow:0 0 25px red;
+  box-shadow:0 0 25px rgba(0,255,200,0.3);
 }
 
-.login-box h1 {
-  color:red;
-  margin-bottom:20px;
+.login-box h2{
+  margin-bottom:25px;
 }
 
-.login-box input {
+input{
   width:100%;
   padding:12px;
   margin:10px 0;
   border-radius:8px;
   border:none;
-  outline:none;
+  background:#111;
+  color:white;
 }
 
-.login-box button {
+button{
   width:100%;
-  padding:12px;
-  background:red;
+  padding:14px;
+  margin-top:15px;
+  background:green;
   border:none;
-  border-radius:8px;
-  color:white;
+  border-radius:10px;
   font-weight:bold;
+  color:white;
   cursor:pointer;
   transition:0.3s;
 }
 
-.login-box button:hover {
-  background:darkred;
+button:hover{
+  background:#00aa00;
 }
 
-.register-link {
-  display:block;
+.error{
   margin-top:15px;
-  color:white;
-  text-decoration:none;
-}
-
-.register-link:hover {
   color:red;
+  font-size:14px;
 }
 
 </style>
 </head>
 <body>
 
+<canvas id="matrix"></canvas>
+<div class="overlay"></div>
+
 <div class="login-box">
+  <h2>Connexion Admin</h2>
 
-<h1>Login</h1>
+  <input type="text" id="username" placeholder="Nom d'utilisateur">
+  <input type="password" id="password" placeholder="Mot de passe">
 
-<input type="text" id="username" placeholder="Username">
-<input type="password" id="password" placeholder="Password">
+  <button onclick="login()">Se connecter</button>
 
-<button onclick="login()">Login</button>
-
-<a class="register-link" href="/register.html">
-Create Account
-</a>
-
+  <div class="error" id="error"></div>
 </div>
 
 <script>
 
-/* ============================= */
-/* LOGIN FUNCTION */
-/* ============================= */
+/* ===================================================== */
+/* AUTO VERIFY (SI DEJA CONNECTE → REDIRECT) */
+/* ===================================================== */
 
-async function login() {
+document.addEventListener("DOMContentLoaded", async () => {
+
+  try {
+    const res = await fetch("/api/verify", {
+      method:"GET",
+      credentials:"include"
+    });
+
+    if(res.ok){
+      window.location = "/index.html";
+    }
+
+  } catch(e){
+    // rien
+  }
+
+});
+
+/* ===================================================== */
+/* LOGIN SECURE COOKIE */
+/* ===================================================== */
+
+async function login(){
 
   const username = document.getElementById("username").value;
   const password = document.getElementById("password").value;
 
-  if (!username || !password) {
-    alert("Fill all fields");
-    return;
+  document.getElementById("error").innerText = "";
+
+  try{
+
+    const res = await fetch("/api/login", {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json"
+      },
+      credentials:"include",
+      body: JSON.stringify({ username, password })
+    });
+
+    const data = await res.json();
+
+    if(!res.ok){
+      document.getElementById("error").innerText = data.error || "Erreur";
+      return;
+    }
+
+    window.location = "/index.html";
+
+  } catch(err){
+    document.getElementById("error").innerText = "Erreur serveur";
   }
-
-  const res = await fetch("/api/login", {
-    method:"POST",
-    headers:{
-      "Content-Type":"application/json"
-    },
-    body:JSON.stringify({ username, password })
-  });
-
-  const data = await res.json();
-
-  if (!data.token) {
-    alert("Login failed");
-    return;
-  }
-
-  localStorage.setItem("token", data.token);
-  localStorage.setItem("role", data.role);
-
-  window.location = "/index.html";
 }
+
+/* ===================================================== */
+/* MATRIX ANIMATION */
+/* ===================================================== */
+
+const canvas = document.getElementById("matrix");
+const ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const letters = "01ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const fontSize = 18;
+const columns = canvas.width / fontSize;
+const drops = [];
+
+for(let i=0;i<columns;i++){
+  drops[i] = 1;
+}
+
+function draw(){
+
+  ctx.fillStyle = "rgba(0,0,0,0.05)";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  ctx.font = fontSize+"px monospace";
+
+  for(let i=0;i<drops.length;i++){
+
+    const text = letters[Math.floor(Math.random()*letters.length)];
+
+    // mélange bleu + vert
+    const color = Math.random() > 0.5 ? "#00ffcc" : "#0099ff";
+    ctx.fillStyle = color;
+
+    ctx.fillText(text, i*fontSize, drops[i]*fontSize);
+
+    if(drops[i]*fontSize > canvas.height && Math.random()>0.975){
+      drops[i] = 0;
+    }
+
+    drops[i]++;
+  }
+}
+
+setInterval(draw,50);
 
 </script>
 
