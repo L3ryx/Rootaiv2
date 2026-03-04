@@ -1,33 +1,33 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Admin Panel</title>
-<link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<title>Admin</title>
+<style>
+body{margin:0;background:#000;color:white;font-family:Arial;text-align:center;}
+button{
+  padding:10px 20px;
+  margin:20px;
+  background:red;
+  border:none;
+  color:white;
+  font-weight:bold;
+  border-radius:6px;
+  cursor:pointer;
+}
+</style>
 </head>
 <body>
 
-<h1 class="title">Admin Panel</h1>
+<h1>Admin Dashboard</h1>
 
-<div class="admin-container">
+<button onclick="back()">Retour Dashboard</button>
 
-<h2>API Keys</h2>
+<script>
+function back(){
+  window.location="/dashboard";
+}
+</script>
 
-<input type="password" id="adminPassword" placeholder="Admin Password" />
-
-<input type="text" id="serpapi" placeholder="SerpAPI Key" />
-<input type="text" id="openai" placeholder="OpenAI Key" />
-<input type="text" id="imgbb" placeholder="ImgBB Key" />
-
-<button onclick="saveConfig()" class="search-btn">
-Save Keys
-</button>
-
-<h2>Logs History</h2>
-
-<div id="logsHistory"></div>
-
-</div>
-
-<script src="admin.js"></script>
 </body>
 </html>
