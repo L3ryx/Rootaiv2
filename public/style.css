@@ -1,126 +1,54 @@
 body {
-  background: black;
-  color: white;
-  font-family: Arial;
-  text-align: center;
+  background:black;
+  color:white;
+  text-align:center;
+  font-family:Arial;
 }
 
-/* ======================= */
-/* TITLE ANIMATION */
-/* ======================= */
-
-.title {
-  font-size: 60px;
-  font-weight: bold;
-  text-align: center;
-  animation: colorShift 5s infinite;
+.main-title {
+  font-size:100px;
+  animation:colorMove 4s infinite;
 }
 
-@keyframes colorShift {
-  0% { color: red; }
-  50% { color: white; }
-  100% { color: red; }
+@keyframes colorMove {
+  0% { color:white; }
+  50% { color:red; }
+  100% { color:white; }
 }
 
-/* ======================= */
-/* TOP LEFT BUTTON */
-/* ======================= */
-
-.top-left-btn {
-  position: absolute;
-  top: 20px;
-  left: 20px;
-  background: green;
-  padding: 10px 15px;
-  color: white;
-  text-decoration: none;
-  border-radius: 8px;
-}
-
-/* ======================= */
-/* LOGIN */
-/* ======================= */
-
-.login-container {
-  margin-top: 150px;
-}
-
-.login-container input {
-  font-size: 22px;
-  padding: 10px;
-}
-
-.login-container button {
-  font-size: 22px;
-  padding: 10px 20px;
-}
-
-/* ======================= */
-/* TOOL */
-/* ======================= */
-
-.tool-container {
-  margin-top: 40px;
+.tool {
+  margin-top:50px;
 }
 
 .upload-btn {
-  background: red;
-  color: white;
-  font-size: 25px;
-  padding: 20px 40px;
-  border: none;
-  border-radius: 15px;
-  cursor: pointer;
+  background:red;
+  padding:20px 40px;
+  border:none;
+  font-size:25px;
+  cursor:pointer;
+  display:block;
+  margin:auto;
 }
 
 .search-btn {
-  background: green;
-  color: white;
-  font-size: 22px;
-  padding: 15px 30px;
-  border-radius: 10px;
-  border: none;
-  margin-top: 20px;
+  background:green;
+  padding:15px 30px;
+  font-size:20px;
+  border:none;
+  margin-top:20px;
+  cursor:pointer;
 }
-
-/* ======================= */
-/* IMAGE PREVIEW */
-/* ======================= */
 
 .preview-img {
-  width: 200px;
-  margin: 10px;
-  border-radius: 10px;
+  width:200px;
+  margin:10px;
 }
 
-.image-block {
-  margin: 20px;
-}
-
-/* ======================= */
-/* PROGRESS BAR */
-/* ======================= */
-
-.progress-bar {
-  height: 8px;
-  width: 0%;
-  background: red;
-  transition: width 0.5s;
-  margin-top: 5px;
-}
-
-/* ======================= */
-/* ADMIN */
-/* ======================= */
-
-.admin-container {
-  width: 60%;
-  margin: auto;
-}
-
-.admin-container input {
-  display: block;
-  margin: 10px auto;
-  padding: 10px;
-  width: 80%;
+.logout-btn {
+  position:absolute;
+  top:20px;
+  right:20px;
+  background:red;
+  color:white;
+  padding:10px;
 }
