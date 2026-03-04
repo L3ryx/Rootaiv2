@@ -1,7 +1,7 @@
 body {
-  font-family: Arial, sans-serif;
+  font-family: Arial;
   padding: 40px;
-  background: #f4f4f4;
+  background: #f5f5f5;
 }
 
 h1 {
@@ -9,8 +9,8 @@ h1 {
 }
 
 form {
-  margin-bottom: 30px;
   text-align: center;
+  margin-bottom: 30px;
 }
 
 button {
@@ -18,18 +18,9 @@ button {
   cursor: pointer;
 }
 
-#results {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
 .result-card {
   background: white;
-  padding: 15px;
+  padding: 20px;
+  margin-bottom: 20px;
   border-radius: 8px;
-}
-
-.result-card ul {
-  padding-left: 20px;
 }
