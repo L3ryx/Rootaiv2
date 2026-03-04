@@ -23,14 +23,19 @@ form.addEventListener("submit", async (e) => {
 
     let html = `<h3>${result.imageName}</h3>`;
 
-    if (result.aliexpressLinks && result.aliexpressLinks.length > 0) {
-      html += "<ul>";
-      result.aliexpressLinks.forEach(link => {
-        html += `<li><a href="${link}" target="_blank">${link}</a></li>`;
+    if (result.products && result.products.length > 0) {
+      result.products.forEach(product => {
+        html += `
+          <div>
+            <img src="${product.image}" width="120"/>
+            <p>${product.title}</p>
+            <a href="${product.url}" target="_blank">Voir produit</a>
+          </div>
+          <hr/>
+        `;
       });
-      html += "</ul>";
     } else {
-      html += "<p>Aucun produit AliExpress trouvé</p>";
+      html += "<p>Aucun produit trouvé ou captcha détecté</p>";
     }
 
     card.innerHTML = html;
