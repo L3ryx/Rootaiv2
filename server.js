@@ -19,34 +19,26 @@ app.use(express.static("public"));
 
 /*
 ====================================================
-LOG SYSTEM (WITH ERROR DETAIL)
+LOG SYSTEM
 ====================================================
 */
 
-function sendLog(socket, message, type = "info", errorDetails = null) {
+function sendLog(socket, message, type = "info") {
 
-  const payload = {
-    message,
-    type,
-    time: new Date().toISOString(),
-    errorDetails
-  };
-
-  console.log(`[${type.toUpperCase()}] ${message}`);
-
-  if (errorDetails) {
-    console.log("🔴 ERROR DETAILS:");
-    console.log(errorDetails);
-  }
+  console.log(`[${type}] ${message}`);
 
   if (socket) {
-    socket.emit("log", payload);
+    socket.emit("log", {
+      message,
+      type,
+      time: new Date().toISOString()
+    });
   }
 }
 
 /*
 ====================================================
-SIMILARITY FUNCTION
+IMAGE SIMILARITY (OPENAI)
 ====================================================
 */
 
@@ -62,21 +54,14 @@ async function calculateSimilarity(base64A, base64B, socket) {
           {
             role: "user",
             content: [
+              { type: "text", text: "Return only a similarity score between 0 and 1." },
               {
-                type: "text",
-                text: "Return ONLY a similarity score between 0 and 1."
+                type: "image_url",
+                image_url: { url: `data:image/jpeg;base64,${base64A}` }
               },
               {
                 type: "image_url",
-                image_url: {
-                  url: `data:image/jpeg;base64,${base64A}`
-                }
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:image/jpeg;base64,${base64B}`
-                }
+                image_url: { url: `data:image/jpeg;base64,${base64B}` }
               }
             ]
           }
@@ -96,17 +81,7 @@ async function calculateSimilarity(base64A, base64B, socket) {
 
   } catch (err) {
 
-    sendLog(
-      socket,
-      "❌ Similarity API failed",
-      "error",
-      {
-        status: err.response?.status,
-        data: err.response?.data,
-        message: err.message,
-        url: err.config?.url
-      }
-    );
+    sendLog(socket, "❌ Similarity calculation failed", "error");
 
     return 0;
   }
@@ -114,7 +89,7 @@ async function calculateSimilarity(base64A, base64B, socket) {
 
 /*
 ====================================================
-ANALYZE ROUTE
+ANALYZE ROUTE — SERPAPI VERSION
 ====================================================
 */
 
@@ -137,41 +112,37 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
     /*
     =====================================================
-    SCRAPER REQUEST
+    STEP 1 — CALL SERPAPI REVERSE IMAGE SEARCH
     =====================================================
     */
 
-    sendLog(socket, "🔎 Calling ScraperAPI");
+    sendLog(socket, "🔎 Calling SerpAPI Reverse Image Search");
 
-    let html = "";
+    let serpResults = [];
 
     try {
 
       const response = await axios.get(
-        "http://api.scraperapi.com",
+        "https://serpapi.com/search",
         {
           params: {
-            api_key: process.env.SCRAPERAPI_KEY,
-            url: "https://www.aliexpress.com/wholesale?SearchText=test",
-            render: true
+            engine: "google_reverse_image",
+            image_url: `data:image/jpeg;base64,${base64Input}`,
+            api_key: process.env.SERPAPI_KEY
           }
         }
       );
 
-      html = response.data;
+      serpResults = response.data?.image_results || [];
+
+      sendLog(socket, `📦 ${serpResults.length} results from Google`);
 
     } catch (err) {
 
       sendLog(
         socket,
-        "❌ Scraper request failed",
-        "error",
-        {
-          status: err.response?.status,
-          data: err.response?.data,
-          message: err.message,
-          url: err.config?.url
-        }
+        `❌ SerpAPI failed | ${err.response?.status} | ${err.message}`,
+        "error"
       );
 
       results.push({
@@ -184,83 +155,38 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
     /*
     =====================================================
-    EXTRACT APOLLO STATE
+    STEP 2 — FILTER ALIEXPRESS LINKS
     =====================================================
     */
 
-    sendLog(socket, "📦 Extracting products from HTML");
+    const aliexpressLinks = serpResults
+      .filter(r => r.link && r.link.includes("aliexpress.com"))
+      .slice(0, 10);
 
-    const match = html.match(
-      /window\.__APOLLO_STATE__\s*=\s*(\{.*?\});/s
-    );
-
-    let products = [];
-
-    if (!match) {
-
-      sendLog(
-        socket,
-        "⚠ Apollo state not found in page",
-        "warning"
-      );
-
-    } else {
-
-      try {
-
-        const state = JSON.parse(match[1]);
-
-        const keys = Object.keys(state).filter(k =>
-          k.includes("Product")
-        );
-
-        products = keys.map(k => ({
-          productId: state[k].productId,
-          imageUrl: state[k].imageUrl
-        })).filter(p => p.productId);
-
-      } catch (err) {
-
-        sendLog(
-          socket,
-          "❌ Failed parsing Apollo JSON",
-          "error",
-          {
-            message: err.message
-          }
-        );
-
-      }
-    }
-
-    sendLog(socket, `📦 ${products.length} products extracted`);
+    sendLog(socket, `🛒 ${aliexpressLinks.length} AliExpress links found`);
 
     /*
     =====================================================
-    COMPARE PRODUCTS
+    STEP 3 — DOWNLOAD PRODUCT IMAGE + COMPARE
     =====================================================
     */
 
-    const matched = [];
+    const matches = [];
 
-    for (const product of products.slice(0, 10)) {
+    for (const item of aliexpressLinks) {
 
-      sendLog(socket, `🔍 Checking product ${product.productId}`);
-
-      if (!product.imageUrl) {
-
-        sendLog(socket, "⚠ Product missing imageUrl", "warning");
-        continue;
-      }
+      sendLog(socket, `🔍 Checking ${item.link}`);
 
       try {
 
-        const img = await axios.get(product.imageUrl, {
+        if (!item.thumbnail) continue;
+
+        const imgResponse = await axios.get(item.thumbnail, {
           responseType: "arraybuffer"
         });
 
         const base64Product =
-          Buffer.from(img.data).toString("base64");
+          Buffer.from(imgResponse.data).toString("base64");
 
         const similarity = Math.round(
           (await calculateSimilarity(
@@ -272,13 +198,10 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
         if (similarity >= 60) {
 
-          sendLog(socket, `✅ Match ${similarity}%`, "success");
+          sendLog(socket, `✅ Match found ${similarity}%`, "success");
 
-          matched.push({
-            url:
-              "https://www.aliexpress.com/item/" +
-              product.productId +
-              ".html",
+          matches.push({
+            url: item.link,
             similarity
           });
 
@@ -291,22 +214,15 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
         sendLog(
           socket,
-          "❌ Product image download failed",
-          "error",
-          {
-            status: err.response?.status,
-            message: err.message,
-            url: product.imageUrl
-          }
+          `❌ Product image download failed | ${err.message}`,
+          "error"
         );
       }
     }
 
     results.push({
       image: file.originalname,
-      matches: matched.sort(
-        (a, b) => b.similarity - a.similarity
-      )
+      matches: matches.sort((a, b) => b.similarity - a.similarity)
     });
   }
 
@@ -315,7 +231,7 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
 /*
 ====================================================
-SOCKET
+SOCKET.IO
 ====================================================
 */
 
@@ -331,7 +247,7 @@ io.on("connection", (socket) => {
 
 /*
 ====================================================
-START
+START SERVER
 ====================================================
 */
 
