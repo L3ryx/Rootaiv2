@@ -132,6 +132,9 @@ const upload = multer({
 
 app.use("/uploads", express.static(uploadDir));
 app.use(express.static("public"));
+app.get("/login", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/login.html"));
+});
 
 /* =====================================================
    REGISTER
