@@ -1,13 +1,11 @@
 // ======================================================
-// ALI SEARCH AI
-// FULL CLEAN PRO SERVER
+// ALI SEARCH AI - SERVER CLEAN FINAL
 // ======================================================
 
 const express = require("express");
 const multer = require("multer");
 const axios = require("axios");
 const http = require("http");
-const { Server } = require("socket.io");
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcrypt");
@@ -16,25 +14,20 @@ const crypto = require("crypto");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
 
 const PORT = 3000;
 
 const SECRET_KEY = "CHANGE_THIS_SECRET";
 const ADMIN_PASSWORD = "admin123";
 
-/* =====================================================
-   FILE PATHS
-===================================================== */
-
 const CONFIG_PATH = "./config.json";
 const USERS_PATH = "./users.json";
 const SESSIONS_PATH = "./sessions.json";
 const LOG_PATH = "./logs.json";
 
-/* =====================================================
-   UTIL FUNCTIONS
-===================================================== */
+// ======================================================
+// UTILS
+// ======================================================
 
 function readJSON(file, fallback) {
   if (!fs.existsSync(file)) return fallback;
@@ -45,17 +38,14 @@ function writeJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-/* =====================================================
-   ENCRYPTED CONFIG
-===================================================== */
+// ======================================================
+// CONFIG ENCRYPTED
+// ======================================================
 
 function getConfig() {
   if (!fs.existsSync(CONFIG_PATH)) return {};
-
-  const encrypted = fs.readFileSync(CONFIG_PATH, "utf8");
-  if (!encrypted) return {};
-
   try {
+    const encrypted = fs.readFileSync(CONFIG_PATH, "utf8");
     const bytes = CryptoJS.AES.decrypt(encrypted, SECRET_KEY);
     return JSON.parse(bytes.toString(CryptoJS.enc.Utf8) || "{}");
   } catch {
@@ -72,52 +62,13 @@ function saveConfig(config) {
   fs.writeFileSync(CONFIG_PATH, encrypted);
 }
 
-/* =====================================================
-   USERS SYSTEM
-===================================================== */
-
-function getUsers() {
-  return readJSON(USERS_PATH, []);
-}
-
-function saveUsers(users) {
-  writeJSON(USERS_PATH, users);
-}
-
-/* =====================================================
-   SESSIONS
-===================================================== */
-
-function getSessions() {
-  return readJSON(SESSIONS_PATH, []);
-}
-
-function saveSessions(sessions) {
-  writeJSON(SESSIONS_PATH, sessions);
-}
-
-/* =====================================================
-   LOG SYSTEM
-===================================================== */
-
-function saveLog(message) {
-
-  const logs = readJSON(LOG_PATH, []);
-
-  logs.push({
-    message,
-    time: new Date()
-  });
-
-  writeJSON(LOG_PATH, logs);
-}
-
-/* =====================================================
-   MIDDLEWARE
-===================================================== */
+// ======================================================
+// MIDDLEWARE
+// ======================================================
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static("public"));
 
 const uploadDir = "./uploads";
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
@@ -131,19 +82,16 @@ const upload = multer({
 });
 
 app.use("/uploads", express.static(uploadDir));
-app.use(express.static("public"));
-app.get("/login", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/login.html"));
-});
 
-/* =====================================================
-   REGISTER
-===================================================== */
+// ======================================================
+// REGISTER (ROLE SUPPORTED)
+// ======================================================
 
 app.post("/api/register", async (req, res) => {
 
-  const { username, password } = req.body;
-  const users = getUsers();
+  const { username, password, role } = req.body;
+
+  const users = readJSON(USERS_PATH, []);
 
   if (users.find(u => u.username === username)) {
     return res.status(400).json({ error: "User exists" });
@@ -154,27 +102,27 @@ app.post("/api/register", async (req, res) => {
   users.push({
     username,
     password: hash,
+    role: role || "user",
     createdAt: new Date()
   });
 
-  saveUsers(users);
+  writeJSON(USERS_PATH, users);
 
   res.json({ success: true });
-
 });
 
-/* =====================================================
-   LOGIN
-===================================================== */
+// ======================================================
+// LOGIN (USER + ADMIN)
+// ======================================================
 
 app.post("/api/login", async (req, res) => {
 
   const { username, password } = req.body;
 
-  const users = getUsers();
+  const users = readJSON(USERS_PATH, []);
   const user = users.find(u => u.username === username);
 
-  if (!user) return res.status(404).json({ error: "User not found" });
+  if (!user) return res.status(404).json({ error: "Not found" });
 
   const match = await bcrypt.compare(password, user.password);
 
@@ -182,39 +130,41 @@ app.post("/api/login", async (req, res) => {
 
   const token = crypto.randomUUID();
 
-  const sessions = getSessions();
+  const sessions = readJSON(SESSIONS_PATH, []);
+
   sessions.push({
     token,
     username,
-    createdAt: new Date()
+    role: user.role || "user"
   });
 
-  saveSessions(sessions);
+  writeJSON(SESSIONS_PATH, sessions);
 
-  res.json({ token });
-
+  res.json({
+    token,
+    role: user.role || "user"
+  });
 });
 
-/* =====================================================
-   LOGOUT
-===================================================== */
+// ======================================================
+// LOGOUT
+// ======================================================
 
 app.post("/api/logout", (req, res) => {
 
   const { token } = req.body;
 
-  let sessions = getSessions();
+  let sessions = readJSON(SESSIONS_PATH, []);
   sessions = sessions.filter(s => s.token !== token);
 
-  saveSessions(sessions);
+  writeJSON(SESSIONS_PATH, sessions);
 
   res.json({ success: true });
-
 });
 
-/* =====================================================
-   ADMIN LOGIN
-===================================================== */
+// ======================================================
+// ADMIN LOGIN
+// ======================================================
 
 app.post("/admin/login", async (req, res) => {
 
@@ -228,66 +178,11 @@ app.post("/admin/login", async (req, res) => {
   if (!match) return res.status(401).json({ error: "Unauthorized" });
 
   res.json({ success: true });
-
 });
 
-/* =====================================================
-   CONFIG ROUTES (ADMIN ONLY)
-===================================================== */
-
-app.get("/api/config", (req, res) => {
-
-  const password = req.query.password;
-
-  if (password !== ADMIN_PASSWORD)
-    return res.status(403).json({ error: "Unauthorized" });
-
-  res.json(getConfig());
-
-});
-
-app.post("/api/config", (req, res) => {
-
-  const { password, config } = req.body;
-
-  if (password !== ADMIN_PASSWORD)
-    return res.status(403).json({ error: "Unauthorized" });
-
-  saveConfig(config);
-  res.json({ success: true });
-
-});
-
-/* =====================================================
-   LOGS
-===================================================== */
-
-app.get("/api/logs", (req, res) => {
-
-  const password = req.query.password;
-
-  if (password !== ADMIN_PASSWORD)
-    return res.status(403).json({ error: "Unauthorized" });
-
-  res.json(readJSON(LOG_PATH, []));
-
-});
-
-app.post("/api/logs/clear", (req, res) => {
-
-  const { password } = req.body;
-
-  if (password !== ADMIN_PASSWORD)
-    return res.status(403).json({ error: "Unauthorized" });
-
-  writeJSON(LOG_PATH, []);
-  res.json({ success: true });
-
-});
-
-/* =====================================================
-   LIST USERS (ADMIN DASHBOARD)
-===================================================== */
+// ======================================================
+// ADMIN ROUTES
+// ======================================================
 
 app.get("/api/users", (req, res) => {
 
@@ -296,13 +191,12 @@ app.get("/api/users", (req, res) => {
   if (password !== ADMIN_PASSWORD)
     return res.status(403).json({ error: "Unauthorized" });
 
-  res.json(getUsers());
-
+  res.json(readJSON(USERS_PATH, []));
 });
 
-/* =====================================================
-   ANALYZE IMAGE
-===================================================== */
+// ======================================================
+// ANALYZE IMAGE
+// ======================================================
 
 app.post("/analyze", upload.array("images"), async (req, res) => {
 
@@ -313,8 +207,6 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
     const publicUrl =
       `${req.protocol}://${req.get("host")}/uploads/${file.filename}`;
-
-    saveLog("Analyzing " + file.filename);
 
     let serpResults = [];
 
@@ -333,11 +225,7 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
       serpResults = response.data?.image_results || [];
 
-    } catch (err) {
-
-      saveLog("SerpAPI error: " + err.message);
-
-    }
+    } catch {}
 
     const matches = serpResults
       .filter(r => r.link?.includes("aliexpress.com"))
@@ -350,17 +238,15 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
       image: file.filename,
       matches
     });
-
   }
 
   res.json({ results });
-
 });
 
-/* =====================================================
-   START SERVER
-===================================================== */
+// ======================================================
+// START SERVER
+// ======================================================
 
 server.listen(PORT, () => {
-  console.log("🚀 Server running on port " + PORT);
+  console.log("🚀 Server running on port", PORT);
 });
