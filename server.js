@@ -1,3 +1,7 @@
+// =============================
+// SERVER.JS — SERPAPI VERSION
+// =============================
+
 require("dotenv").config();
 const express = require("express");
 const multer = require("multer");
@@ -25,7 +29,7 @@ LOG SYSTEM
 
 function sendLog(socket, message, type = "info") {
 
-  console.log(`[${type}] ${message}`);
+  console.log(`[${type.toUpperCase()}] ${message}`);
 
   if (socket) {
     socket.emit("log", {
@@ -38,7 +42,7 @@ function sendLog(socket, message, type = "info") {
 
 /*
 ====================================================
-IMAGE SIMILARITY (OPENAI)
+SIMILARITY WITH OPENAI
 ====================================================
 */
 
@@ -54,14 +58,21 @@ async function calculateSimilarity(base64A, base64B, socket) {
           {
             role: "user",
             content: [
-              { type: "text", text: "Return only a similarity score between 0 and 1." },
               {
-                type: "image_url",
-                image_url: { url: `data:image/jpeg;base64,${base64A}` }
+                type: "text",
+                text: "Return ONLY a similarity score between 0 and 1."
               },
               {
                 type: "image_url",
-                image_url: { url: `data:image/jpeg;base64,${base64B}` }
+                image_url: {
+                  url: `data:image/jpeg;base64,${base64A}`
+                }
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${base64B}`
+                }
               }
             ]
           }
@@ -81,7 +92,7 @@ async function calculateSimilarity(base64A, base64B, socket) {
 
   } catch (err) {
 
-    sendLog(socket, "❌ Similarity calculation failed", "error");
+    sendLog(socket, `❌ Similarity failed`, "error");
 
     return 0;
   }
@@ -89,7 +100,7 @@ async function calculateSimilarity(base64A, base64B, socket) {
 
 /*
 ====================================================
-ANALYZE ROUTE — SERPAPI VERSION
+ANALYZE ROUTE
 ====================================================
 */
 
@@ -112,11 +123,11 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
     /*
     =====================================================
-    STEP 1 — CALL SERPAPI REVERSE IMAGE SEARCH
+    STEP 1 — SERPAPI REVERSE IMAGE SEARCH
     =====================================================
     */
 
-    sendLog(socket, "🔎 Calling SerpAPI Reverse Image Search");
+    sendLog(socket, "🔎 Calling SerpAPI");
 
     let serpResults = [];
 
@@ -135,13 +146,13 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
       serpResults = response.data?.image_results || [];
 
-      sendLog(socket, `📦 ${serpResults.length} results from Google`);
+      sendLog(socket, `📦 ${serpResults.length} Google results found`, "success");
 
     } catch (err) {
 
       sendLog(
         socket,
-        `❌ SerpAPI failed | ${err.response?.status} | ${err.message}`,
+        `❌ SerpAPI error | ${err.response?.status} | ${err.message}`,
         "error"
       );
 
@@ -163,7 +174,7 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
       .filter(r => r.link && r.link.includes("aliexpress.com"))
       .slice(0, 10);
 
-    sendLog(socket, `🛒 ${aliexpressLinks.length} AliExpress links found`);
+    sendLog(socket, `🛒 ${aliexpressLinks.length} AliExpress links filtered`);
 
     /*
     =====================================================
@@ -198,7 +209,7 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
         if (similarity >= 60) {
 
-          sendLog(socket, `✅ Match found ${similarity}%`, "success");
+          sendLog(socket, `✅ Match ${similarity}%`, "success");
 
           matches.push({
             url: item.link,
@@ -214,7 +225,7 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
         sendLog(
           socket,
-          `❌ Product image download failed | ${err.message}`,
+          `❌ Product image failed | ${err.message}`,
           "error"
         );
       }
