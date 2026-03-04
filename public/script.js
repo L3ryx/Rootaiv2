@@ -1,20 +1,45 @@
 const socket = io();
 let socketId = null;
 
+/*
+=========================================
+SOCKET CONNECTION
+=========================================
+*/
+
 socket.on("connected", (data) => {
   socketId = data.socketId;
+  console.log("Socket connected:", socketId);
 });
 
-socket.on("progress", (data) => {
+/*
+=========================================
+LIVE LOGS
+=========================================
+*/
 
-  const progressDiv = document.getElementById("progress");
+socket.on("log", (data) => {
 
-  const p = document.createElement("p");
-  p.textContent = data.message;
+  const logsDiv = document.getElementById("logs");
 
-  progressDiv.appendChild(p);
+  const line = document.createElement("p");
 
+  line.innerHTML = `
+    <span style="color:#888">
+      [${new Date(data.time).toLocaleTimeString()}]
+    </span>
+    ${data.message}
+  `;
+
+  logsDiv.appendChild(line);
+  logsDiv.scrollTop = logsDiv.scrollHeight;
 });
+
+/*
+=========================================
+FORM SUBMIT
+=========================================
+*/
 
 const form = document.getElementById("uploadForm");
 
@@ -25,6 +50,8 @@ form.addEventListener("submit", async (e) => {
   const formData = new FormData(form);
   formData.append("socketId", socketId);
 
+  document.getElementById("logs").innerHTML = "";
+
   const response = await fetch("/analyze", {
     method: "POST",
     body: formData
@@ -32,5 +59,5 @@ form.addEventListener("submit", async (e) => {
 
   const data = await response.json();
 
-  console.log(data);
+  console.log("Results:", data);
 });
