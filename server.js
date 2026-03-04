@@ -1,5 +1,5 @@
 // ======================================================
-// ALI SEARCH AI - PROTECTED VERSION
+// ALI SEARCH AI - HTTP ONLY COOKIE VERSION
 // ======================================================
 
 const express = require("express");
@@ -9,14 +9,18 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
+const cookieParser = require("cookie-parser");
 
 const app = express();
 const server = http.createServer(app);
 
 const PORT = process.env.PORT || 3000;
 
-const ADMIN_USERNAME = "darkoff";
-const ADMIN_PASSWORD_PLAIN = "Bretigny91";
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+app.use(express.static(path.join(__dirname, "public")));
 
 const USERS_PATH = "./users.json";
 const SESSIONS_PATH = "./sessions.json";
@@ -44,21 +48,18 @@ function writeJSON(file, data) {
 // AUTO ADMIN
 // ======================================================
 
-async function createDefaultAdmin() {
+async function createAdmin() {
 
   const users = readJSON(USERS_PATH, []);
 
-  const exists = users.find(u => u.username === ADMIN_USERNAME);
-  if (exists) return;
+  if (users.find(u => u.username === "darkoff")) return;
 
-  const hash = await bcrypt.hash(ADMIN_PASSWORD_PLAIN, 10);
+  const hash = await bcrypt.hash("Bretigny91", 12);
 
   users.push({
-    username: ADMIN_USERNAME,
+    username: "darkoff",
     password: hash,
-    role: "admin",
-    immutable: true,
-    createdAt: new Date()
+    role: "admin"
   });
 
   writeJSON(USERS_PATH, users);
@@ -67,41 +68,24 @@ async function createDefaultAdmin() {
 }
 
 // ======================================================
-// CLEAN SESSIONS
-// ======================================================
-
-function cleanSessions() {
-
-  const sessions = readJSON(SESSIONS_PATH, []);
-  const now = Date.now();
-
-  const active = sessions.filter(
-    s => now - s.createdAt < SESSION_DURATION
-  );
-
-  writeJSON(SESSIONS_PATH, active);
-}
-
-setInterval(cleanSessions, 600000);
-
-// ======================================================
-// MIDDLEWARE
+// AUTH MIDDLEWARE (COOKIE BASED)
 // ======================================================
 
 function authMiddleware(req, res, next) {
 
-  const token = req.headers.authorization;
+  const token = req.cookies.session;
 
   if (!token)
-    return res.status(401).json({ error: "No token" });
-
-  cleanSessions();
+    return res.status(401).json({ error: "Not authenticated" });
 
   const sessions = readJSON(SESSIONS_PATH, []);
   const session = sessions.find(s => s.token === token);
 
   if (!session)
-    return res.status(401).json({ error: "Invalid token" });
+    return res.status(401).json({ error: "Invalid session" });
+
+  if (Date.now() - session.createdAt > SESSION_DURATION)
+    return res.status(401).json({ error: "Session expired" });
 
   req.user = session;
   next();
@@ -109,9 +93,7 @@ function authMiddleware(req, res, next) {
 
 function adminMiddleware(req, res, next) {
 
-  const token = req.headers.authorization;
-
-  cleanSessions();
+  const token = req.cookies.session;
 
   const sessions = readJSON(SESSIONS_PATH, []);
   const session = sessions.find(
@@ -121,80 +103,12 @@ function adminMiddleware(req, res, next) {
   if (!session)
     return res.status(403).json({ error: "Admin only" });
 
+  req.user = session;
   next();
 }
 
 // ======================================================
-// EXPRESS CONFIG
-// ======================================================
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, "public")));
-
-const uploadDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
-
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: uploadDir,
-    filename: (req, file, cb) =>
-      cb(null, Date.now() + "-" + file.originalname)
-  })
-});
-
-app.use("/uploads", express.static(uploadDir));
-
-// ======================================================
-// FRONTEND ROUTES
-// ======================================================
-
-app.get("/", (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "index.html"))
-);
-
-app.get("/login", (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "login.html"))
-);
-
-app.get("/register", (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "register.html"))
-);
-
-app.get("/admin", (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "admin.html"))
-);
-
-// ======================================================
-// REGISTER
-// ======================================================
-
-app.post("/api/register", async (req, res) => {
-
-  const { username, password } = req.body;
-
-  const users = readJSON(USERS_PATH, []);
-
-  if (users.find(u => u.username === username))
-    return res.status(400).json({ error: "User exists" });
-
-  const hash = await bcrypt.hash(password, 10);
-
-  users.push({
-    username,
-    password: hash,
-    role: "user",
-    immutable: false,
-    createdAt: new Date()
-  });
-
-  writeJSON(USERS_PATH, users);
-
-  res.json({ success: true });
-});
-
-// ======================================================
-// LOGIN
+// LOGIN (SET HTTP ONLY COOKIE)
 // ======================================================
 
 app.post("/api/login", async (req, res) => {
@@ -225,54 +139,65 @@ app.post("/api/login", async (req, res) => {
 
   writeJSON(SESSIONS_PATH, sessions);
 
-  res.json({ token, role: user.role });
+  // 🔥 COOKIE SECURE + HTTP ONLY
+  res.cookie("session", token, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "strict",
+    maxAge: SESSION_DURATION
+  });
+
+  res.json({ success: true, role: user.role });
 });
 
 // ======================================================
-// VERIFY TOKEN
+// VERIFY SESSION
 // ======================================================
 
 app.get("/api/verify", authMiddleware, (req, res) => {
-  res.json({ valid: true, user: req.user });
+
+  res.json({
+    valid: true,
+    user: req.user.username,
+    role: req.user.role
+  });
+
 });
 
 // ======================================================
-// LOGOUT
+// LOGOUT (CLEAR COOKIE)
 // ======================================================
 
 app.post("/api/logout", (req, res) => {
 
-  const { token } = req.body;
+  const token = req.cookies.session;
 
   let sessions = readJSON(SESSIONS_PATH, []);
   sessions = sessions.filter(s => s.token !== token);
 
   writeJSON(SESSIONS_PATH, sessions);
 
+  res.clearCookie("session");
+
   res.json({ success: true });
 });
 
 // ======================================================
-// ADMIN ROUTE
+// ANALYZE PROTECTED
 // ======================================================
 
-app.get("/api/admin/users", adminMiddleware, (req, res) => {
+const uploadDir = path.join(__dirname, "uploads");
 
-  const users = readJSON(USERS_PATH, []);
+if (!fs.existsSync(uploadDir))
+  fs.mkdirSync(uploadDir);
 
-  const safe = users.map(u => ({
-    username: u.username,
-    role: u.role,
-    createdAt: u.createdAt,
-    immutable: u.immutable
-  }));
-
-  res.json(safe);
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: uploadDir,
+    filename: (req, file, cb) =>
+      cb(null, Date.now() + "-" + file.originalname)
+  })
 });
-
-// ======================================================
-// ANALYZE
-// ======================================================
 
 app.post("/analyze", authMiddleware, upload.array("images"), (req, res) => {
 
@@ -285,10 +210,10 @@ app.post("/analyze", authMiddleware, upload.array("images"), (req, res) => {
 });
 
 // ======================================================
-// START SERVER
+// START
 // ======================================================
 
 server.listen(PORT, async () => {
-  await createDefaultAdmin();
+  await createAdmin();
   console.log("🚀 Server running on port", PORT);
 });
