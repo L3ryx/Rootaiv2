@@ -1,5 +1,6 @@
 // ======================================================
-// ALI SEARCH AI - FULL PRO SERVER
+// ALI SEARCH AI
+// FULL CLEAN PRO SERVER
 // ======================================================
 
 const express = require("express");
@@ -19,17 +20,21 @@ const io = new Server(server);
 
 const PORT = 3000;
 
+const SECRET_KEY = "CHANGE_THIS_SECRET";
+const ADMIN_PASSWORD = "admin123";
+
+/* =====================================================
+   FILE PATHS
+===================================================== */
+
 const CONFIG_PATH = "./config.json";
 const USERS_PATH = "./users.json";
 const SESSIONS_PATH = "./sessions.json";
 const LOG_PATH = "./logs.json";
 
-const SECRET_KEY = "CHANGE_THIS_SECRET";
-const ADMIN_PASSWORD = "admin123";
-
-// ======================================================
-// UTILS
-// ======================================================
+/* =====================================================
+   UTIL FUNCTIONS
+===================================================== */
 
 function readJSON(file, fallback) {
   if (!fs.existsSync(file)) return fallback;
@@ -40,14 +45,16 @@ function writeJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-// ======================================================
-// CONFIG ENCRYPTED
-// ======================================================
+/* =====================================================
+   ENCRYPTED CONFIG
+===================================================== */
 
 function getConfig() {
   if (!fs.existsSync(CONFIG_PATH)) return {};
+
   const encrypted = fs.readFileSync(CONFIG_PATH, "utf8");
   if (!encrypted) return {};
+
   try {
     const bytes = CryptoJS.AES.decrypt(encrypted, SECRET_KEY);
     return JSON.parse(bytes.toString(CryptoJS.enc.Utf8) || "{}");
@@ -61,12 +68,13 @@ function saveConfig(config) {
     JSON.stringify(config),
     SECRET_KEY
   ).toString();
+
   fs.writeFileSync(CONFIG_PATH, encrypted);
 }
 
-// ======================================================
-// USERS SYSTEM
-// ======================================================
+/* =====================================================
+   USERS SYSTEM
+===================================================== */
 
 function getUsers() {
   return readJSON(USERS_PATH, []);
@@ -76,9 +84,9 @@ function saveUsers(users) {
   writeJSON(USERS_PATH, users);
 }
 
-// ======================================================
-// SESSIONS
-// ======================================================
+/* =====================================================
+   SESSIONS
+===================================================== */
 
 function getSessions() {
   return readJSON(SESSIONS_PATH, []);
@@ -88,19 +96,25 @@ function saveSessions(sessions) {
   writeJSON(SESSIONS_PATH, sessions);
 }
 
-// ======================================================
-// LOG SYSTEM
-// ======================================================
+/* =====================================================
+   LOG SYSTEM
+===================================================== */
 
 function saveLog(message) {
-  let logs = readJSON(LOG_PATH, []);
-  logs.push({ message, time: new Date() });
+
+  const logs = readJSON(LOG_PATH, []);
+
+  logs.push({
+    message,
+    time: new Date()
+  });
+
   writeJSON(LOG_PATH, logs);
 }
 
-// ======================================================
-// MIDDLEWARE
-// ======================================================
+/* =====================================================
+   MIDDLEWARE
+===================================================== */
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -119,9 +133,9 @@ const upload = multer({
 app.use("/uploads", express.static(uploadDir));
 app.use(express.static("public"));
 
-// ======================================================
-// REGISTER
-// ======================================================
+/* =====================================================
+   REGISTER
+===================================================== */
 
 app.post("/api/register", async (req, res) => {
 
@@ -146,9 +160,9 @@ app.post("/api/register", async (req, res) => {
 
 });
 
-// ======================================================
-// LOGIN
-// ======================================================
+/* =====================================================
+   LOGIN
+===================================================== */
 
 app.post("/api/login", async (req, res) => {
 
@@ -157,7 +171,7 @@ app.post("/api/login", async (req, res) => {
   const users = getUsers();
   const user = users.find(u => u.username === username);
 
-  if (!user) return res.status(404).json({ error: "Not found" });
+  if (!user) return res.status(404).json({ error: "User not found" });
 
   const match = await bcrypt.compare(password, user.password);
 
@@ -165,17 +179,22 @@ app.post("/api/login", async (req, res) => {
 
   const token = crypto.randomUUID();
 
-  let sessions = getSessions();
-  sessions.push({ token, username, createdAt: new Date() });
+  const sessions = getSessions();
+  sessions.push({
+    token,
+    username,
+    createdAt: new Date()
+  });
+
   saveSessions(sessions);
 
   res.json({ token });
 
 });
 
-// ======================================================
-// LOGOUT
-// ======================================================
+/* =====================================================
+   LOGOUT
+===================================================== */
 
 app.post("/api/logout", (req, res) => {
 
@@ -190,9 +209,9 @@ app.post("/api/logout", (req, res) => {
 
 });
 
-// ======================================================
-// ADMIN LOGIN
-// ======================================================
+/* =====================================================
+   ADMIN LOGIN
+===================================================== */
 
 app.post("/admin/login", async (req, res) => {
 
@@ -209,13 +228,14 @@ app.post("/admin/login", async (req, res) => {
 
 });
 
-// ======================================================
-// CONFIG ROUTES
-// ======================================================
+/* =====================================================
+   CONFIG ROUTES (ADMIN ONLY)
+===================================================== */
 
 app.get("/api/config", (req, res) => {
 
   const password = req.query.password;
+
   if (password !== ADMIN_PASSWORD)
     return res.status(403).json({ error: "Unauthorized" });
 
@@ -235,13 +255,14 @@ app.post("/api/config", (req, res) => {
 
 });
 
-// ======================================================
-// LOGS
-// ======================================================
+/* =====================================================
+   LOGS
+===================================================== */
 
 app.get("/api/logs", (req, res) => {
 
   const password = req.query.password;
+
   if (password !== ADMIN_PASSWORD)
     return res.status(403).json({ error: "Unauthorized" });
 
@@ -261,9 +282,24 @@ app.post("/api/logs/clear", (req, res) => {
 
 });
 
-// ======================================================
-// ANALYZE
-// ======================================================
+/* =====================================================
+   LIST USERS (ADMIN DASHBOARD)
+===================================================== */
+
+app.get("/api/users", (req, res) => {
+
+  const password = req.query.password;
+
+  if (password !== ADMIN_PASSWORD)
+    return res.status(403).json({ error: "Unauthorized" });
+
+  res.json(getUsers());
+
+});
+
+/* =====================================================
+   ANALYZE IMAGE
+===================================================== */
 
 app.post("/analyze", upload.array("images"), async (req, res) => {
 
@@ -294,7 +330,11 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
       serpResults = response.data?.image_results || [];
 
-    } catch {}
+    } catch (err) {
+
+      saveLog("SerpAPI error: " + err.message);
+
+    }
 
     const matches = serpResults
       .filter(r => r.link?.includes("aliexpress.com"))
@@ -314,10 +354,10 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
 
 });
 
-// ======================================================
-// START
-// ======================================================
+/* =====================================================
+   START SERVER
+===================================================== */
 
 server.listen(PORT, () => {
-  console.log("🚀 Server running");
+  console.log("🚀 Server running on port " + PORT);
 });
