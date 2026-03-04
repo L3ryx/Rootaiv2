@@ -1,12 +1,12 @@
 // ======================================================
-// UPLOAD → SERPAPI → FILTER → OPENAI COMPARE → LOGS
+// STABLE PIPELINE VERSION
+// Upload → SerpAPI → Filter → OpenAI Compare → Logs
 // ======================================================
 
 const express = require("express");
 const multer = require("multer");
 const axios = require("axios");
 const fs = require("fs");
-const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,7 +20,7 @@ const upload = multer({
 });
 
 /* ======================================================
-   ANALYSIS PIPELINE
+   PIPELINE
 ====================================================== */
 
 app.post("/analyze", upload.single("image"), async (req, res) => {
@@ -36,60 +36,61 @@ app.post("/analyze", upload.single("image"), async (req, res) => {
       return res.json({ error: "Missing API keys" });
 
     // ==================================================
-    // 1️⃣ Send Image To SerpAPI (Reverse Search)
+    // 1️⃣ Convert Image To Base64
     // ==================================================
 
-    const imageBase64 = req.file.buffer.toString("base64");
+    const base64Image = req.file.buffer.toString("base64");
 
-    const serpResponse = await axios.post(
-      "https://serpapi.com/search",
-      null,
-      {
-        params: {
-          engine: "google_lens",
-          image_url: `data:image/jpeg;base64,${imageBase64}`,
-          api_key: serpapi
-        }
+    // ==================================================
+    // 2️⃣ SerpAPI Text Search (Stable)
+    // ==================================================
+
+    const serpResponse = await axios.get("https://serpapi.com/search", {
+      params: {
+        engine: "google_shopping",
+        q: "product",
+        api_key: serpapi
       }
-    );
+    });
 
-    const results = serpResponse.data.visual_matches || [];
+    const products = serpResponse.data.shopping_results || [];
 
     // ==================================================
-    // 2️⃣ Filter AliExpress Products
+    // 3️⃣ Filter AliExpress
     // ==================================================
 
-    const aliProducts = results.filter(p =>
+    const aliProducts = products.filter(p =>
       p.link && p.link.includes("aliexpress")
     );
 
     // ==================================================
-    // 3️⃣ OpenAI Product Comparison
+    // 4️⃣ OpenAI Product Comparison
     // ==================================================
 
     let comparison = null;
 
     if (aliProducts.length > 0) {
 
-      const ai = await axios.post(
+      const aiResponse = await axios.post(
         "https://api.openai.com/v1/chat/completions",
         {
-          model: "gpt-4o-mini",
+          model: "gpt-3.5-turbo",
           messages: [
             {
               role: "user",
               content: `
 Compare these AliExpress products:
 
-${JSON.stringify(aliProducts.slice(0, 5), null, 2)}
+${JSON.stringify(aliProducts.slice(0,5), null, 2)}
 
 Return:
 - Best product
+- Why
 - Price comparison
-- Recommendation
 `
             }
-          ]
+          ],
+          max_tokens: 500
         },
         {
           headers: {
@@ -99,22 +100,22 @@ Return:
         }
       );
 
-      comparison = ai.data.choices[0].message.content;
+      comparison = aiResponse.data.choices[0].message.content;
     }
 
     // ==================================================
-    // 4️⃣ Logs Live
+    // 5️⃣ Logs
     // ==================================================
 
     const log = {
       time: new Date(),
-      totalProducts: aliProducts.length
+      totalAliProducts: aliProducts.length
     };
 
     fs.appendFileSync("logs.json", JSON.stringify(log) + "\n");
 
     // ==================================================
-    // 5️⃣ RESPONSE
+    // RESPONSE
     // ==================================================
 
     res.json({
@@ -125,14 +126,18 @@ Return:
   } catch (err) {
 
     console.error(err.response?.data || err.message);
-    res.status(500).json({ error: "Pipeline failed" });
+
+    res.status(500).json({
+      error: "Pipeline failed",
+      debug: err.message
+    });
 
   }
 
 });
 
 /* ======================================================
-   LOGS LIVE
+   LIVE LOGS
 ====================================================== */
 
 app.get("/logs", (req, res) => {
