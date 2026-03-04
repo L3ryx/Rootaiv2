@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Admin Panel</title>
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Panel</title>
 
 <style>
+
 body {
   background:black;
   color:white;
@@ -20,21 +22,22 @@ input, button {
 
 button {
   background:#00ff88;
-  cursor:pointer;
   font-weight:bold;
+  cursor:pointer;
 }
+
 </style>
 </head>
 <body>
 
-<h1>🔐 Admin Dashboard</h1>
+<h1>🔐 Admin Panel</h1>
 
-<p>Configurer les clés API :</p>
+<p>API Key :</p>
 
 <input type="text" id="apiKey" placeholder="Enter API Key">
 <br><br>
 
-<button onclick="saveApi()">Save API Key</button>
+<button onclick="saveApi()">Save API</button>
 
 <script>
 
@@ -48,7 +51,7 @@ async function saveApi() {
     body: JSON.stringify({ key })
   });
 
-  alert("API Key saved !");
+  alert("API saved !");
 }
 
 </script>
