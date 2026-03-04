@@ -6,28 +6,17 @@
 </head>
 <body>
 
-<a href="/admin.html" class="top-btn">Admin</a>
-
-<button class="logout-btn" onclick="logout()">
-Logout
-</button>
+<button id="adminBtn" style="display:none;">Admin Dashboard</button>
+<button class="logout-btn" onclick="logout()">Logout</button>
 
 <h1 class="main-title">Ali Search AI</h1>
 
 <div class="tool">
 
-<input type="file" id="imageInput" multiple />
-
-<button class="upload-btn" onclick="uploadImages()">
-📤 UPLOAD
-</button>
+<input type="file" id="imageInput" multiple>
+<button class="upload-btn" onclick="uploadImages()">Upload</button>
 
 <div id="preview"></div>
-
-<button class="search-btn" onclick="startSearch()">
-🚀 START SEARCH
-</button>
-
 <div id="results"></div>
 
 </div>
