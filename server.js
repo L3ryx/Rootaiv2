@@ -1,7 +1,7 @@
 // ======================================================
-// ROOTAIV2 - SECURE VERSION
-// Registration removed
-// Admin predefined only
+// ROOTAIV2 - CLEAN PRODUCTION VERSION
+// Admin must login
+// API keys stored server side
 // ======================================================
 
 const express = require("express");
@@ -28,23 +28,20 @@ const SESSION_DURATION = 1000 * 60 * 60;
 // ======================================================
 
 app.use(helmet());
-app.use(rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100
-}));
-
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(express.static("public"));
 
 // ======================================================
-// UTIL FUNCTIONS
+// UTIL
 // ======================================================
 
 function readJSON(file, fallback) {
   if (!fs.existsSync(file)) return fallback;
-  return JSON.parse(fs.readFileSync(file));
+  try { return JSON.parse(fs.readFileSync(file)); }
+  catch { return fallback; }
 }
 
 function writeJSON(file, data) {
@@ -52,7 +49,7 @@ function writeJSON(file, data) {
 }
 
 // ======================================================
-// CREATE DEFAULT ADMIN (ONLY ON FIRST START)
+// CREATE DEFAULT ADMIN
 // ======================================================
 
 async function createAdmin() {
@@ -71,11 +68,11 @@ async function createAdmin() {
 
   writeJSON(USERS_PATH, users);
 
-  console.log("✅ Default admin created");
+  console.log("✅ Admin created");
 }
 
 // ======================================================
-// AUTH SYSTEM
+// SESSION SYSTEM
 // ======================================================
 
 function getSession(token) {
@@ -129,12 +126,12 @@ app.get("/", (req, res) => {
   res.redirect("/login.html");
 });
 
-app.get("/admin", requireAdmin, (req, res) => {
-  res.sendFile(path.join(__dirname, "public/admin.html"));
-});
-
 app.get("/dashboard", requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, "public/index.html"));
+});
+
+app.get("/admin", requireAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, "public/admin.html"));
 });
 
 // ======================================================
@@ -196,7 +193,23 @@ app.post("/api/logout", (req, res) => {
 });
 
 // ======================================================
-// START
+// SAVE API KEY (ADMIN ONLY)
+// ======================================================
+
+app.post("/api/save-key", requireAdmin, (req, res) => {
+
+  const { key } = req.body;
+
+  fs.writeFileSync(
+    "apikey.json",
+    JSON.stringify({ key }, null, 2)
+  );
+
+  res.json({ success: true });
+});
+
+// ======================================================
+// START SERVER
 // ======================================================
 
 server.listen(PORT, async () => {
