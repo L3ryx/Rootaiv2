@@ -1,41 +1,10 @@
-<!DOCTYPE html>
-<html>
-<head>
-<title>Login</title>
-<link rel="stylesheet" href="style.css">
-</head>
-<body>
-
-<h1 class="main-title">Login</h1>
-
-<div class="tool">
-
-<input id="username" placeholder="Username">
-<br><br>
-<input id="password" type="password" placeholder="Password">
-<br><br>
-
-<button class="search-btn" onclick="login()">
-Login
-</button>
-
-<p>
-<a href="/register.html" style="color:white;">
-Create Account
-</a>
-</p>
-
-</div>
-
 <script>
 
 async function login() {
 
   const res = await fetch("/api/login", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       username: username.value,
       password: password.value
@@ -44,19 +13,15 @@ async function login() {
 
   const data = await res.json();
 
-  if (data.token) {
-
-    localStorage.setItem("token", data.token);
-
-    window.location = "/";
-
-  } else {
+  if (!data.token) {
     alert("Login failed");
+    return;
   }
 
+  localStorage.setItem("token", data.token);
+  localStorage.setItem("role", data.role);
+
+  window.location = "/index.html";
 }
 
 </script>
-
-</body>
-</html>
