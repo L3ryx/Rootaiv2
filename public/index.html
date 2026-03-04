@@ -6,45 +6,37 @@
 </head>
 <body>
 
-<div id="loginSection" class="login-box">
-  <h2>🔐 Admin Login</h2>
-  <input type="password" id="passwordInput" placeholder="Enter admin password" />
+<!-- TOP LEFT BUTTON -->
+<a href="/admin.html" class="top-left-btn">Espace Admin</a>
+
+<!-- TITLE -->
+<h1 class="title">Ali Search AI</h1>
+
+<!-- LOGIN -->
+<div id="loginSection" class="login-container">
+  <input type="password" id="passwordInput" placeholder="Admin Password" />
   <button onclick="login()">Login</button>
 </div>
 
-<div id="appSection" style="display:none;">
+<!-- TOOL -->
+<div id="toolSection" style="display:none;" class="tool-container">
 
-  <h1 class="neon-title">Ali Search AI</h1>
+  <input type="file" id="imageInput" multiple hidden />
 
-  <div class="glass-card">
+  <button class="upload-btn" onclick="document.getElementById('imageInput').click()">
+    📤 UPLOAD IMAGES
+  </button>
 
-    <form id="uploadForm">
-      <input type="file" multiple />
-      <button class="btn-green" type="submit">
-        🚀 Analyze Images
-      </button>
-    </form>
+  <div id="preview"></div>
 
-    <div class="progress-container">
-      <div class="progress-bar"></div>
-    </div>
+  <button class="search-btn" onclick="startSearch()">
+    🚀 START SEARCH
+  </button>
 
-  </div>
-
-  <div class="glass-card">
-    <h3>📜 Logs</h3>
-    <div id="logs"></div>
-  </div>
-
-  <div class="glass-card">
-    <h3>📦 Results</h3>
-    <div id="results"></div>
-  </div>
+  <div id="progressContainer"></div>
 
 </div>
 
-<script src="/socket.io/socket.io.js"></script>
-<script src="script.js"></script>
-
+<script src="/script.js"></script>
 </body>
 </html>
