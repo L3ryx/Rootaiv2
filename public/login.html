@@ -1,225 +1,79 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Connexion - Ali Search AI</title>
-
+<title>Login</title>
 <style>
-
-/* ============================= */
-/* GLOBAL */
-/* ============================= */
-
 body{
   margin:0;
-  font-family:Arial, sans-serif;
-  background:black;
-  color:white;
+  height:100vh;
   display:flex;
   justify-content:center;
   align-items:center;
-  height:100vh;
-  overflow:hidden;
+  background:black;
+  color:white;
+  font-family:Arial;
 }
-
-/* ============================= */
-/* MATRIX BACKGROUND */
-/* ============================= */
-
-#matrix{
-  position:fixed;
-  top:0;
-  left:0;
-  width:100%;
-  height:100%;
-  z-index:-2;
-}
-
-.overlay{
-  position:fixed;
-  top:0;
-  left:0;
-  width:100%;
-  height:100%;
-  background:rgba(0,0,0,0.7);
-  z-index:-1;
-}
-
-/* ============================= */
-/* LOGIN BOX */
-/* ============================= */
-
 .login-box{
-  background:rgba(0,0,0,0.85);
+  background:#111;
   padding:40px;
-  border-radius:16px;
-  width:350px;
+  border-radius:12px;
+  width:320px;
   text-align:center;
-  box-shadow:0 0 25px rgba(0,255,200,0.3);
 }
-
-.login-box h2{
-  margin-bottom:25px;
-}
-
 input{
   width:100%;
   padding:12px;
   margin:10px 0;
-  border-radius:8px;
+  background:#222;
   border:none;
-  background:#111;
   color:white;
+  border-radius:6px;
 }
-
 button{
   width:100%;
   padding:14px;
-  margin-top:15px;
   background:green;
   border:none;
-  border-radius:10px;
-  font-weight:bold;
   color:white;
+  font-weight:bold;
+  border-radius:8px;
   cursor:pointer;
-  transition:0.3s;
 }
-
-button:hover{
-  background:#00aa00;
-}
-
-.error{
-  margin-top:15px;
-  color:red;
-  font-size:14px;
-}
-
 </style>
 </head>
 <body>
 
-<canvas id="matrix"></canvas>
-<div class="overlay"></div>
-
 <div class="login-box">
-  <h2>Connexion Admin</h2>
-
-  <input type="text" id="username" placeholder="Nom d'utilisateur">
-  <input type="password" id="password" placeholder="Mot de passe">
-
+  <h2>Connexion</h2>
+  <input id="username" placeholder="Utilisateur">
+  <input id="password" type="password" placeholder="Mot de passe">
   <button onclick="login()">Se connecter</button>
-
-  <div class="error" id="error"></div>
+  <p id="error"></p>
 </div>
 
 <script>
-
-/* ===================================================== */
-/* AUTO VERIFY (SI DEJA CONNECTE → REDIRECT) */
-/* ===================================================== */
-
-document.addEventListener("DOMContentLoaded", async () => {
-
-  try {
-    const res = await fetch("/api/verify", {
-      method:"GET",
-      credentials:"include"
-    });
-
-    if(res.ok){
-      window.location = "/index.html";
-    }
-
-  } catch(e){
-    // rien
-  }
-
-});
-
-/* ===================================================== */
-/* LOGIN SECURE COOKIE */
-/* ===================================================== */
-
 async function login(){
 
   const username = document.getElementById("username").value;
   const password = document.getElementById("password").value;
 
-  document.getElementById("error").innerText = "";
+  const res = await fetch("/api/login",{
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    credentials:"include",
+    body:JSON.stringify({username,password})
+  });
 
-  try{
+  const data = await res.json();
 
-    const res = await fetch("/api/login", {
-      method:"POST",
-      headers:{
-        "Content-Type":"application/json"
-      },
-      credentials:"include",
-      body: JSON.stringify({ username, password })
-    });
-
-    const data = await res.json();
-
-    if(!res.ok){
-      document.getElementById("error").innerText = data.error || "Erreur";
-      return;
-    }
-
-    window.location = "/index.html";
-
-  } catch(err){
-    document.getElementById("error").innerText = "Erreur serveur";
+  if(!res.ok){
+    document.getElementById("error").innerText = data.error;
+    return;
   }
+
+  window.location="/index.html";
 }
-
-/* ===================================================== */
-/* MATRIX ANIMATION */
-/* ===================================================== */
-
-const canvas = document.getElementById("matrix");
-const ctx = canvas.getContext("2d");
-
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-
-const letters = "01ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-const fontSize = 18;
-const columns = canvas.width / fontSize;
-const drops = [];
-
-for(let i=0;i<columns;i++){
-  drops[i] = 1;
-}
-
-function draw(){
-
-  ctx.fillStyle = "rgba(0,0,0,0.05)";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-
-  ctx.font = fontSize+"px monospace";
-
-  for(let i=0;i<drops.length;i++){
-
-    const text = letters[Math.floor(Math.random()*letters.length)];
-
-    // mélange bleu + vert
-    const color = Math.random() > 0.5 ? "#00ffcc" : "#0099ff";
-    ctx.fillStyle = color;
-
-    ctx.fillText(text, i*fontSize, drops[i]*fontSize);
-
-    if(drops[i]*fontSize > canvas.height && Math.random()>0.975){
-      drops[i] = 0;
-    }
-
-    drops[i]++;
-  }
-}
-
-setInterval(draw,50);
-
 </script>
 
 </body>
