@@ -15,36 +15,65 @@ UTILS
 ====================================================
 */
 
-// Convert image buffer to base64
 function toBase64(buffer) {
   return buffer.toString("base64");
 }
 
-// Simple text similarity score
-function similarityScore(text1, text2) {
-  if (!text1 || !text2) return 0;
-
-  const words1 = text1.toLowerCase().split(" ");
-  const words2 = text2.toLowerCase().split(" ");
-
-  const matches = words1.filter(word => words2.includes(word));
-
-  return matches.length / Math.max(words1.length, 1);
+function getSimilarity(score) {
+  return Math.round(score * 100);
 }
 
 /*
 ====================================================
-IMAGE ANALYSIS ROUTE
+IMAGE COMPARISON VIA OPENAI
+====================================================
+*/
+
+async function compareImages(base64A, base64B) {
+
+  const response = await axios.post(
+    "https://api.openai.com/v1/chat/completions",
+    {
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Return similarity score between 0 and 1 for these two product images." },
+            {
+              type: "image_url",
+              image_url: { url: `data:image/jpeg;base64,${base64A}` }
+            },
+            {
+              type: "image_url",
+              image_url: { url: `data:image/jpeg;base64,${base64B}` }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+      }
+    }
+  );
+
+  const text = response.data.choices[0].message.content;
+  const match = text.match(/0\.\d+|1(\.0+)?/);
+
+  return match ? parseFloat(match[0]) : 0;
+}
+
+/*
+====================================================
+PIPELINE
 ====================================================
 */
 
 app.post("/analyze", upload.array("images"), async (req, res) => {
 
-  if (!req.files || req.files.length === 0) {
-    return res.status(400).json({ error: "No images uploaded" });
-  }
-
-  const finalResults = [];
+  const results = [];
 
   for (const file of req.files) {
 
@@ -53,160 +82,106 @@ app.post("/analyze", upload.array("images"), async (req, res) => {
       const base64Image = toBase64(file.buffer);
 
       /*
-      ====================================================
-      1️⃣ OPENAI VISION → Describe Image
-      ====================================================
+      ==================================================
+      1️⃣ OUVRIR RECHERCHE IMAGE OFFICIELLE ALIEXPRESS
+      ==================================================
       */
 
-      let imageDescription = "";
+      const searchUrl = "https://www.aliexpress.com/p/uploadImage/search";
 
-      try {
-        const visionResponse = await axios.post(
-          "https://api.openai.com/v1/chat/completions",
-          {
-            model: "gpt-4o-mini",
-            messages: [
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: "Describe this product image in detail." },
-                  {
-                    type: "image_url",
-                    image_url: {
-                      url: `data:image/jpeg;base64,${base64Image}`
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-              "Content-Type": "application/json"
-            }
-          }
-        );
+      const scrape = await axios.get("http://api.scraperapi.com", {
+        params: {
+          api_key: process.env.SCRAPERAPI_KEY,
+          url: searchUrl,
+          render: true
+        }
+      });
 
-        imageDescription =
-          visionResponse.data.choices[0].message.content;
-
-      } catch (err) {
-        console.log("Vision API failed:", err.message);
-      }
+      const html = scrape.data;
 
       /*
-      ====================================================
-      2️⃣ ZENSERP → Search Products via Description
-      ====================================================
+      ==================================================
+      2️⃣ EXTRAIRE PRODUITS (TOP 10)
+      ==================================================
       */
 
-      let searchResults = [];
+      const productMatches = [
+        ...html.matchAll(/"productId":"(.*?)"/g)
+      ].slice(0, 10);
 
-      try {
-        const zenserpResponse = await axios.get(
-          "https://app.zenserp.com/api/v2/search",
-          {
-            params: {
-              apikey: process.env.ZENSERP_API_KEY,
-              q: imageDescription,
-              tbm: "shop"
-            }
-          }
-        );
+      const matched = [];
 
-        searchResults = zenserpResponse.data.organic || [];
+      for (const match of productMatches) {
 
-      } catch (err) {
-        console.log("Zenserp failed:", err.message);
-      }
+        const productId = match[1];
 
-      /*
-      ====================================================
-      3️⃣ FILTER ONLY ALIEXPRESS LINKS
-      ====================================================
-      */
-
-      const aliexpressLinks = searchResults
-        .map(item => item.link)
-        .filter(link => link && link.includes("aliexpress.com"));
-
-      /*
-      ====================================================
-      4️⃣ SCRAPERAPI → Scrape Product Pages
-      ====================================================
-      */
-
-      const products = [];
-
-      for (const link of aliexpressLinks) {
+        const productUrl =
+          "https://www.aliexpress.com/item/" + productId + ".html";
 
         try {
 
-          const scrape = await axios.get(
+          const productPage = await axios.get(
             "http://api.scraperapi.com",
             {
               params: {
                 api_key: process.env.SCRAPERAPI_KEY,
-                url: link,
+                url: productUrl,
                 render: true
               }
             }
           );
 
-          const html = scrape.data;
+          const productHtml = productPage.data;
 
-          const titleMatch = html.match(/<title>(.*?)<\/title>/);
-          const priceMatch = html.match(/"price":"(.*?)"/);
+          const imgMatch = productHtml.match(/"imageUrl":"(.*?)"/);
 
-          const title = titleMatch ? titleMatch[1] : "Unknown";
-          const price = priceMatch ? priceMatch[1] : "Unknown";
+          if (!imgMatch) continue;
 
-          const score = similarityScore(imageDescription, title);
+          const productImageUrl =
+            imgMatch[1].replace(/\\\//g, "/");
 
-          /*
-          ====================================================
-          5️⃣ FILTER BY SIMILARITY SCORE
-          ====================================================
-          */
+          const productImage = await axios.get(productImageUrl, {
+            responseType: "arraybuffer"
+          });
 
-          if (score > 0.3) {
-            products.push({
-              url: link,
-              title,
-              price,
-              similarityScore: score
+          const base64Product = Buffer.from(
+            productImage.data
+          ).toString("base64");
+
+          const similarity = await compareImages(
+            base64Image,
+            base64Product
+          );
+
+          if (similarity >= 0.6) {
+
+            matched.push({
+              productUrl,
+              similarity: getSimilarity(similarity)
             });
           }
 
         } catch (err) {
-          console.log("Scraping failed:", link);
+          console.log("Product check failed:", err.message);
         }
       }
 
-      /*
-      ====================================================
-      FINAL RESULT
-      ====================================================
-      */
-
-      finalResults.push({
-        imageName: file.originalname,
-        description: imageDescription,
-        products
+      results.push({
+        image: file.originalname,
+        products: matched
       });
 
     } catch (err) {
 
-      finalResults.push({
-        imageName: file.originalname,
-        error: "Pipeline failed"
+      results.push({
+        image: file.originalname,
+        products: []
       });
 
     }
   }
 
-  res.json({ results: finalResults });
+  res.json({ results });
 });
 
 /*
@@ -215,8 +190,6 @@ START SERVER
 ====================================================
 */
 
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
+app.listen(process.env.PORT || 3000, () => {
+  console.log("Server running");
 });
