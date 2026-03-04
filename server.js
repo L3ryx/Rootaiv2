@@ -1,5 +1,5 @@
 // ======================================================
-// ALI SEARCH AI - HTTP ONLY COOKIE VERSION
+// ROOT AI V2 - SECURE HTTP ONLY COOKIE VERSION
 // ======================================================
 
 const express = require("express");
@@ -16,16 +16,19 @@ const server = http.createServer(app);
 
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
-
-app.use(express.static(path.join(__dirname, "public")));
-
 const USERS_PATH = "./users.json";
 const SESSIONS_PATH = "./sessions.json";
 
-const SESSION_DURATION = 1000 * 60 * 60;
+const SESSION_DURATION = 1000 * 60 * 60; // 1h
+
+// ======================================================
+// EXPRESS CONFIG
+// ======================================================
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, "public")));
 
 // ======================================================
 // UTILS
@@ -33,11 +36,8 @@ const SESSION_DURATION = 1000 * 60 * 60;
 
 function readJSON(file, fallback) {
   if (!fs.existsSync(file)) return fallback;
-  try {
-    return JSON.parse(fs.readFileSync(file));
-  } catch {
-    return fallback;
-  }
+  try { return JSON.parse(fs.readFileSync(file)); }
+  catch { return fallback; }
 }
 
 function writeJSON(file, data) {
@@ -45,7 +45,16 @@ function writeJSON(file, data) {
 }
 
 // ======================================================
-// AUTO ADMIN
+// CLEAR SESSIONS AT START (IMPORTANT)
+// ======================================================
+
+if (fs.existsSync(SESSIONS_PATH)) {
+  fs.writeFileSync(SESSIONS_PATH, JSON.stringify([], null, 2));
+  console.log("🧹 Sessions cleared on startup");
+}
+
+// ======================================================
+// CREATE DEFAULT ADMIN
 // ======================================================
 
 async function createAdmin() {
@@ -64,28 +73,32 @@ async function createAdmin() {
 
   writeJSON(USERS_PATH, users);
 
-  console.log("🚀 Admin created");
+  console.log("✅ Admin created");
 }
 
 // ======================================================
-// AUTH MIDDLEWARE (COOKIE BASED)
+// AUTH MIDDLEWARE
 // ======================================================
 
 function authMiddleware(req, res, next) {
 
   const token = req.cookies.session;
+  if (!token) return res.status(401).json({ error: "Not authenticated" });
 
-  if (!token)
-    return res.status(401).json({ error: "Not authenticated" });
-
-  const sessions = readJSON(SESSIONS_PATH, []);
+  let sessions = readJSON(SESSIONS_PATH, []);
   const session = sessions.find(s => s.token === token);
 
   if (!session)
     return res.status(401).json({ error: "Invalid session" });
 
-  if (Date.now() - session.createdAt > SESSION_DURATION)
+  if (Date.now() - session.createdAt > SESSION_DURATION) {
+
+    sessions = sessions.filter(s => s.token !== token);
+    writeJSON(SESSIONS_PATH, sessions);
+
+    res.clearCookie("session");
     return res.status(401).json({ error: "Session expired" });
+  }
 
   req.user = session;
   next();
@@ -94,8 +107,8 @@ function authMiddleware(req, res, next) {
 function adminMiddleware(req, res, next) {
 
   const token = req.cookies.session;
-
   const sessions = readJSON(SESSIONS_PATH, []);
+
   const session = sessions.find(
     s => s.token === token && s.role === "admin"
   );
@@ -108,13 +121,12 @@ function adminMiddleware(req, res, next) {
 }
 
 // ======================================================
-// LOGIN (SET HTTP ONLY COOKIE)
+// LOGIN
 // ======================================================
 
 app.post("/api/login", async (req, res) => {
 
   const { username, password } = req.body;
-
   const users = readJSON(USERS_PATH, []);
   const user = users.find(u => u.username === username);
 
@@ -122,12 +134,10 @@ app.post("/api/login", async (req, res) => {
     return res.status(404).json({ error: "User not found" });
 
   const match = await bcrypt.compare(password, user.password);
-
   if (!match)
     return res.status(401).json({ error: "Wrong password" });
 
   const token = crypto.randomUUID();
-
   const sessions = readJSON(SESSIONS_PATH, []);
 
   sessions.push({
@@ -139,33 +149,30 @@ app.post("/api/login", async (req, res) => {
 
   writeJSON(SESSIONS_PATH, sessions);
 
-  // 🔥 COOKIE SECURE + HTTP ONLY
   res.cookie("session", token, {
     httpOnly: true,
-    secure: true,
+    secure: true,        // mettre false en local
     sameSite: "strict",
     maxAge: SESSION_DURATION
   });
 
-  res.json({ success: true, role: user.role });
+  res.json({ success: true });
 });
 
 // ======================================================
-// VERIFY SESSION
+// VERIFY
 // ======================================================
 
 app.get("/api/verify", authMiddleware, (req, res) => {
-
   res.json({
     valid: true,
     user: req.user.username,
     role: req.user.role
   });
-
 });
 
 // ======================================================
-// LOGOUT (CLEAR COOKIE)
+// LOGOUT
 // ======================================================
 
 app.post("/api/logout", (req, res) => {
@@ -174,22 +181,18 @@ app.post("/api/logout", (req, res) => {
 
   let sessions = readJSON(SESSIONS_PATH, []);
   sessions = sessions.filter(s => s.token !== token);
-
   writeJSON(SESSIONS_PATH, sessions);
 
   res.clearCookie("session");
-
   res.json({ success: true });
 });
 
 // ======================================================
-// ANALYZE PROTECTED
+// ANALYZE (UPLOAD PROTECTED)
 // ======================================================
 
 const uploadDir = path.join(__dirname, "uploads");
-
-if (!fs.existsSync(uploadDir))
-  fs.mkdirSync(uploadDir);
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -202,7 +205,6 @@ const upload = multer({
 app.post("/analyze", authMiddleware, upload.array("images"), (req, res) => {
 
   const results = req.files.map(file => ({
-    image: file.filename,
     url: `/uploads/${file.filename}`
   }));
 
