@@ -1,0 +1,19 @@
+{
+  "name": "aliexpress-image-matcher",
+  "version": "1.0.0",
+  "description": "Reverse image search via Zenserp to find matching AliExpress products",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.4.0",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "form-data": "^4.0.0"
+  }
+}
