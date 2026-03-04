@@ -1,21 +1,6 @@
-// ======================================================
-// ALI SEARCH AI - PRO VERSION
-// ======================================================
-
-const socket = io();
-let socketId = null;
-
-// ===============================
-// SOCKET
-// ===============================
-
-socket.on("connected", (data) => {
-  socketId = data.socketId;
-});
-
-// ===============================
-// LOGIN SYSTEM
-// ===============================
+// ==============================
+// LOGIN
+// ==============================
 
 async function login() {
 
@@ -23,159 +8,110 @@ async function login() {
 
   const res = await fetch("/admin/login", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password })
   });
 
   if (!res.ok) {
-    alert("❌ Wrong password");
+    alert("Wrong password");
     return;
   }
 
   localStorage.setItem("loggedIn", "true");
 
   document.getElementById("loginSection").style.display = "none";
-  document.getElementById("appSection").style.display = "block";
+  document.getElementById("toolSection").style.display = "block";
 }
 
-// Auto login if session exists
+// Auto login
 if (localStorage.getItem("loggedIn")) {
   document.getElementById("loginSection").style.display = "none";
-  document.getElementById("appSection").style.display = "block";
+  document.getElementById("toolSection").style.display = "block";
 }
 
-// ===============================
-// DOM ELEMENTS
-// ===============================
+// ==============================
+// IMAGE PREVIEW
+// ==============================
 
-const form = document.getElementById("uploadForm");
-const logsDiv = document.getElementById("logs");
-const resultsDiv = document.getElementById("results");
-const progressBar = document.querySelector(".progress-bar");
+const input = document.getElementById("imageInput");
+const preview = document.getElementById("preview");
+let selectedFiles = [];
 
-// ===============================
-// LIVE LOGS
-// ===============================
+input.addEventListener("change", () => {
 
-socket.on("log", (data) => {
+  preview.innerHTML = "";
+  selectedFiles = Array.from(input.files);
 
-  const line = document.createElement("div");
+  selectedFiles.forEach((file, index) => {
 
-  line.innerHTML = `
-    <span style="color:gray">
-      [${new Date(data.time).toLocaleTimeString()}]
-    </span>
-    <span class="log-${data.type}">
-      ${data.message}
-    </span>
-  `;
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(file);
+    img.className = "preview-img";
 
-  logsDiv.appendChild(line);
-  logsDiv.scrollTop = logsDiv.scrollHeight;
+    const container = document.createElement("div");
+    container.className = "image-block";
+    container.appendChild(img);
+
+    const progress = document.createElement("div");
+    progress.className = "progress-bar";
+    progress.id = "progress-" + index;
+
+    container.appendChild(progress);
+    preview.appendChild(container);
+
+  });
 
 });
 
-// ===============================
-// ANALYZE
-// ===============================
+// ==============================
+// START SEARCH
+// ==============================
 
-form.addEventListener("submit", async (e) => {
+async function startSearch() {
 
-  e.preventDefault();
-
-  logsDiv.innerHTML = "";
-  resultsDiv.innerHTML = "";
-
-  const files = document.querySelector("input[type=file]").files;
-
-  if (!files.length) {
-    alert("Select images first");
+  if (selectedFiles.length === 0) {
+    alert("Upload images first");
     return;
   }
 
-  progressBar.style.width = "0%";
-
   const formData = new FormData();
 
-  for (const file of files) {
+  selectedFiles.forEach(file => {
     formData.append("images", file);
-  }
+  });
+
+  const socketId = "";
 
   formData.append("socketId", socketId);
-
-  progressBar.style.width = "30%";
 
   const response = await fetch("/analyze", {
     method: "POST",
     body: formData
   });
 
-  progressBar.style.width = "80%";
-
   const data = await response.json();
 
-  displayResults(data.results);
+  updateProgressBars(data.results);
+}
 
-  progressBar.style.width = "100%";
+// ==============================
+// UPDATE PROGRESS BAR
+// ==============================
 
-  setTimeout(() => {
-    progressBar.style.width = "0%";
-  }, 800);
+function updateProgressBars(results) {
 
-});
+  results.forEach((result, index) => {
 
-// ===============================
-// DISPLAY RESULTS
-// ===============================
+    const progress = document.getElementById("progress-" + index);
 
-function displayResults(results) {
+    if (!progress) return;
 
-  if (!results || results.length === 0) {
+    let percent = 0;
 
-    resultsDiv.innerHTML =
-      "<h3 style='color:red'>❌ No results</h3>";
-
-    return;
-  }
-
-  results.forEach(result => {
-
-    const card = document.createElement("div");
-    card.className = "product-card";
-
-    let html = `
-      <h3>📷 ${result.image}</h3>
-    `;
-
-    if (!result.matches || result.matches.length === 0) {
-
-      html += `
-        <p style="color:red">
-          ❌ No match ≥60%
-        </p>
-      `;
-
-    } else {
-
-      result.matches.forEach(match => {
-
-        html += `
-          <div class="product-item">
-            <p>🔥 Match: ${match.similarity}%</p>
-            <a href="${match.url}" target="_blank">
-              🔗 Open Product
-            </a>
-          </div>
-        `;
-      });
-
+    if (result.matches && result.matches.length > 0) {
+      percent = 100;
     }
 
-    card.innerHTML = html;
-    resultsDiv.appendChild(card);
-
+    progress.style.width = percent + "%";
   });
-
 }
