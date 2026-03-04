@@ -1,10 +1,9 @@
 // ======================================================
-// ALI SEARCH AI - ULTRA SECURE VERSION (FINAL CLEAN)
+// ALI SEARCH AI - PROTECTED VERSION
 // ======================================================
 
 const express = require("express");
 const multer = require("multer");
-const axios = require("axios");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -14,7 +13,7 @@ const crypto = require("crypto");
 const app = express();
 const server = http.createServer(app);
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 const ADMIN_USERNAME = "darkoff";
 const ADMIN_PASSWORD_PLAIN = "Bretigny91";
@@ -22,7 +21,7 @@ const ADMIN_PASSWORD_PLAIN = "Bretigny91";
 const USERS_PATH = "./users.json";
 const SESSIONS_PATH = "./sessions.json";
 
-const SESSION_DURATION = 1000 * 60 * 60; // 1 heure
+const SESSION_DURATION = 1000 * 60 * 60;
 
 // ======================================================
 // UTILS
@@ -30,7 +29,11 @@ const SESSION_DURATION = 1000 * 60 * 60; // 1 heure
 
 function readJSON(file, fallback) {
   if (!fs.existsSync(file)) return fallback;
-  return JSON.parse(fs.readFileSync(file));
+  try {
+    return JSON.parse(fs.readFileSync(file));
+  } catch {
+    return fallback;
+  }
 }
 
 function writeJSON(file, data) {
@@ -38,7 +41,7 @@ function writeJSON(file, data) {
 }
 
 // ======================================================
-// AUTO CREATE ADMIN (IMMUTABLE)
+// AUTO ADMIN
 // ======================================================
 
 async function createDefaultAdmin() {
@@ -46,7 +49,6 @@ async function createDefaultAdmin() {
   const users = readJSON(USERS_PATH, []);
 
   const exists = users.find(u => u.username === ADMIN_USERNAME);
-
   if (exists) return;
 
   const hash = await bcrypt.hash(ADMIN_PASSWORD_PLAIN, 10);
@@ -61,30 +63,29 @@ async function createDefaultAdmin() {
 
   writeJSON(USERS_PATH, users);
 
-  console.log("🚀 Default admin created (darkoff)");
+  console.log("🚀 Admin created");
 }
 
 // ======================================================
-// SESSION CLEANER
+// CLEAN SESSIONS
 // ======================================================
 
-function cleanExpiredSessions() {
+function cleanSessions() {
 
   const sessions = readJSON(SESSIONS_PATH, []);
-
   const now = Date.now();
 
-  const active = sessions.filter(session =>
-    now - session.createdAt < SESSION_DURATION
+  const active = sessions.filter(
+    s => now - s.createdAt < SESSION_DURATION
   );
 
   writeJSON(SESSIONS_PATH, active);
 }
 
-setInterval(cleanExpiredSessions, 600000);
+setInterval(cleanSessions, 600000);
 
 // ======================================================
-// AUTH MIDDLEWARE
+// MIDDLEWARE
 // ======================================================
 
 function authMiddleware(req, res, next) {
@@ -94,14 +95,13 @@ function authMiddleware(req, res, next) {
   if (!token)
     return res.status(401).json({ error: "No token" });
 
-  cleanExpiredSessions();
+  cleanSessions();
 
   const sessions = readJSON(SESSIONS_PATH, []);
-
   const session = sessions.find(s => s.token === token);
 
   if (!session)
-    return res.status(401).json({ error: "Invalid session" });
+    return res.status(401).json({ error: "Invalid token" });
 
   req.user = session;
   next();
@@ -111,10 +111,9 @@ function adminMiddleware(req, res, next) {
 
   const token = req.headers.authorization;
 
-  cleanExpiredSessions();
+  cleanSessions();
 
   const sessions = readJSON(SESSIONS_PATH, []);
-
   const session = sessions.find(
     s => s.token === token && s.role === "admin"
   );
@@ -131,9 +130,9 @@ function adminMiddleware(req, res, next) {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static("public"));
+app.use(express.static(path.join(__dirname, "public")));
 
-const uploadDir = "./uploads";
+const uploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
 const upload = multer({
@@ -147,27 +146,27 @@ const upload = multer({
 app.use("/uploads", express.static(uploadDir));
 
 // ======================================================
-// FRONTEND ROUTES (FIX Cannot GET /login)
+// FRONTEND ROUTES
 // ======================================================
 
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/index.html"));
-});
+app.get("/", (req, res) =>
+  res.sendFile(path.join(__dirname, "public", "index.html"))
+);
 
-app.get("/login", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/login.html"));
-});
+app.get("/login", (req, res) =>
+  res.sendFile(path.join(__dirname, "public", "login.html"))
+);
 
-app.get("/register", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/register.html"));
-});
+app.get("/register", (req, res) =>
+  res.sendFile(path.join(__dirname, "public", "register.html"))
+);
 
-app.get("/admin", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/admin.html"));
-});
+app.get("/admin", (req, res) =>
+  res.sendFile(path.join(__dirname, "public", "admin.html"))
+);
 
 // ======================================================
-// REGISTER (FORCE ROLE USER)
+// REGISTER
 // ======================================================
 
 app.post("/api/register", async (req, res) => {
@@ -176,9 +175,8 @@ app.post("/api/register", async (req, res) => {
 
   const users = readJSON(USERS_PATH, []);
 
-  if (users.find(u => u.username === username)) {
+  if (users.find(u => u.username === username))
     return res.status(400).json({ error: "User exists" });
-  }
 
   const hash = await bcrypt.hash(password, 10);
 
@@ -231,6 +229,14 @@ app.post("/api/login", async (req, res) => {
 });
 
 // ======================================================
+// VERIFY TOKEN
+// ======================================================
+
+app.get("/api/verify", authMiddleware, (req, res) => {
+  res.json({ valid: true, user: req.user });
+});
+
+// ======================================================
 // LOGOUT
 // ======================================================
 
@@ -247,7 +253,7 @@ app.post("/api/logout", (req, res) => {
 });
 
 // ======================================================
-// ADMIN PROTECTED ROUTE
+// ADMIN ROUTE
 // ======================================================
 
 app.get("/api/admin/users", adminMiddleware, (req, res) => {
@@ -265,23 +271,15 @@ app.get("/api/admin/users", adminMiddleware, (req, res) => {
 });
 
 // ======================================================
-// ANALYZE (PROTECTED)
+// ANALYZE
 // ======================================================
 
 app.post("/analyze", authMiddleware, upload.array("images"), (req, res) => {
 
-  const results = [];
-
-  for (const file of req.files) {
-
-    const url =
-      `${req.protocol}://${req.get("host")}/uploads/${file.filename}`;
-
-    results.push({
-      image: file.filename,
-      url
-    });
-  }
+  const results = req.files.map(file => ({
+    image: file.filename,
+    url: `/uploads/${file.filename}`
+  }));
 
   res.json({ results });
 });
@@ -291,8 +289,6 @@ app.post("/analyze", authMiddleware, upload.array("images"), (req, res) => {
 // ======================================================
 
 server.listen(PORT, async () => {
-
   await createDefaultAdmin();
-
   console.log("🚀 Server running on port", PORT);
 });
