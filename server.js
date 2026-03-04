@@ -1,6 +1,7 @@
 // ======================================================
-// ROOTAIV2 - FINAL STABLE VERSION
-// Fix: bcrypt replaced with bcryptjs (removes vulnerabilities)
+// ROOTAIV2 - SECURE VERSION
+// Registration removed
+// Admin predefined only
 // ======================================================
 
 const express = require("express");
@@ -11,7 +12,7 @@ const crypto = require("crypto");
 const cookieParser = require("cookie-parser");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
-const bcrypt = require("bcryptjs"); // ✅ Secure replacement
+const bcrypt = require("bcryptjs");
 
 const app = express();
 const server = http.createServer(app);
@@ -20,10 +21,10 @@ const PORT = process.env.PORT || 3000;
 
 const USERS_PATH = "./users.json";
 const SESSIONS_PATH = "./sessions.json";
-const SESSION_DURATION = 1000 * 60 * 60; // 1 hour
+const SESSION_DURATION = 1000 * 60 * 60;
 
 // ======================================================
-// SECURITY MIDDLEWARE
+// SECURITY
 // ======================================================
 
 app.use(helmet());
@@ -35,6 +36,7 @@ app.use(rateLimit({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use(express.static("public"));
 
 // ======================================================
 // UTIL FUNCTIONS
@@ -42,11 +44,7 @@ app.use(cookieParser());
 
 function readJSON(file, fallback) {
   if (!fs.existsSync(file)) return fallback;
-  try {
-    return JSON.parse(fs.readFileSync(file));
-  } catch {
-    return fallback;
-  }
+  return JSON.parse(fs.readFileSync(file));
 }
 
 function writeJSON(file, data) {
@@ -54,14 +52,7 @@ function writeJSON(file, data) {
 }
 
 // ======================================================
-// CLEAR SESSIONS ON START
-// ======================================================
-
-writeJSON(SESSIONS_PATH, []);
-console.log("🧹 Sessions cleared");
-
-// ======================================================
-// CREATE DEFAULT ADMIN
+// CREATE DEFAULT ADMIN (ONLY ON FIRST START)
 // ======================================================
 
 async function createAdmin() {
@@ -109,7 +100,7 @@ function requireAuth(req, res, next) {
 
   if (!session) {
     res.clearCookie("session");
-    return res.redirect("/login");
+    return res.redirect("/login.html");
   }
 
   req.user = session;
@@ -123,7 +114,7 @@ function requireAdmin(req, res, next) {
 
   if (!session || session.role !== "admin") {
     res.clearCookie("session");
-    return res.redirect("/login");
+    return res.redirect("/login.html");
   }
 
   req.user = session;
@@ -135,23 +126,19 @@ function requireAdmin(req, res, next) {
 // ======================================================
 
 app.get("/", (req, res) => {
-  res.redirect("/login");
-});
-
-app.get("/login", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/login.html"));
-});
-
-app.get("/dashboard", requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, "public/index.html"));
+  res.redirect("/login.html");
 });
 
 app.get("/admin", requireAdmin, (req, res) => {
   res.sendFile(path.join(__dirname, "public/admin.html"));
 });
 
+app.get("/dashboard", requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, "public/index.html"));
+});
+
 // ======================================================
-// LOGIN API
+// LOGIN
 // ======================================================
 
 app.post("/api/login", async (req, res) => {
@@ -184,15 +171,14 @@ app.post("/api/login", async (req, res) => {
   res.cookie("session", token, {
     httpOnly: true,
     secure: true,
-    sameSite: "strict",
-    maxAge: SESSION_DURATION
+    sameSite: "strict"
   });
 
   res.json({ success: true });
 });
 
 // ======================================================
-// LOGOUT API
+// LOGOUT
 // ======================================================
 
 app.post("/api/logout", (req, res) => {
@@ -210,14 +196,7 @@ app.post("/api/logout", (req, res) => {
 });
 
 // ======================================================
-// STATIC FILES
-// ======================================================
-
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-app.use("/assets", express.static(path.join(__dirname, "public/assets")));
-
-// ======================================================
-// START SERVER
+// START
 // ======================================================
 
 server.listen(PORT, async () => {
