@@ -6,19 +6,40 @@
 </head>
 <body>
 
-<h1 class="neon-title">Ali Search AI</h1>
+<div id="loginSection" class="login-box">
+  <h2>🔐 Admin Login</h2>
+  <input type="password" id="passwordInput" placeholder="Enter admin password" />
+  <button onclick="login()">Login</button>
+</div>
 
-<div class="container">
+<div id="appSection" style="display:none;">
 
-<form id="uploadForm">
-<input type="file" multiple />
-<button class="btn-green" type="submit">Analyze</button>
-</form>
+  <h1 class="neon-title">Ali Search AI</h1>
 
-<div class="loading-bar"></div>
+  <div class="glass-card">
 
-<div id="logs"></div>
-<div id="results"></div>
+    <form id="uploadForm">
+      <input type="file" multiple />
+      <button class="btn-green" type="submit">
+        🚀 Analyze Images
+      </button>
+    </form>
+
+    <div class="progress-container">
+      <div class="progress-bar"></div>
+    </div>
+
+  </div>
+
+  <div class="glass-card">
+    <h3>📜 Logs</h3>
+    <div id="logs"></div>
+  </div>
+
+  <div class="glass-card">
+    <h3>📦 Results</h3>
+    <div id="results"></div>
+  </div>
 
 </div>
 
