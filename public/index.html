@@ -1,93 +1,58 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Root AI V2</title>
+<title>Dashboard</title>
 
 <style>
 
 body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-  background: black;
-  color: white;
-}
-
-/* ===== ADMIN BUTTON ===== */
-
-.admin-btn {
-  position: fixed;
-  top: 20px;
-  left: 20px;
-  background: #00ff88;
-  color: black;
-  padding: 10px 15px;
-  border: none;
-  border-radius: 8px;
-  font-weight: bold;
-  cursor: pointer;
-  z-index: 9999;
-}
-
-/* ===== LOGOUT BUTTON ===== */
-
-.logout-btn {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  background: red;
-  color: white;
-  padding: 10px 15px;
-  border: none;
-  border-radius: 8px;
-  font-weight: bold;
-  cursor: pointer;
+  margin:0;
+  background:black;
+  color:white;
+  font-family:Arial;
 }
 
 .container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
-  flex-direction: column;
+  height:100vh;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
 }
 
-h1 {
-  font-size: 40px;
+button {
+  padding:10px 20px;
+  background:#00ff88;
+  border:none;
+  border-radius:8px;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+.logout {
+  position:fixed;
+  top:20px;
+  right:20px;
+  background:red;
+  color:white;
 }
 
 </style>
 </head>
 <body>
 
-<!-- ✅ ADMIN BUTTON -->
-<button class="admin-btn" onclick="window.location.href='/admin'">
-Admin
-</button>
-
-<!-- ✅ LOGOUT BUTTON -->
-<button class="logout-btn" onclick="logout()">
-Logout
-</button>
+<button class="logout" onclick="logout()">Logout</button>
 
 <div class="container">
-<h1>Root AI V2</h1>
-<p>Bienvenue dans l'espace utilisateur sécurisé</p>
 
-<input type="file" id="fileInput" multiple>
+<h1>User Dashboard</h1>
+
+<input type="file" multiple id="fileInput">
 <br><br>
 
-<button onclick="upload()" style="
-padding:10px 20px;
-background:#00ff88;
-border:none;
-border-radius:8px;
-font-weight:bold;
-cursor:pointer;
-">
-Lancer
-</button>
+<button onclick="upload()">Lancer</button>
 
 <div id="result"></div>
 
@@ -95,48 +60,30 @@ Lancer
 
 <script>
 
-/* ===============================
-   UPLOAD FUNCTION
-=============================== */
-
 async function upload() {
 
   const input = document.getElementById("fileInput");
-  const files = input.files;
-
-  if (!files.length) {
-    alert("Sélectionne au moins une image");
-    return;
-  }
-
   const formData = new FormData();
 
-  for (let file of files) {
+  for (let file of input.files) {
     formData.append("images", file);
   }
 
   const res = await fetch("/analyze", {
-    method: "POST",
-    body: formData
+    method:"POST",
+    body:formData
   });
 
   const data = await res.json();
 
   document.getElementById("result").innerHTML =
-    "<pre>" + JSON.stringify(data, null, 2) + "</pre>";
+  "<pre>" + JSON.stringify(data, null, 2) + "</pre>";
 }
-
-/* ===============================
-   LOGOUT
-=============================== */
 
 async function logout() {
 
-  await fetch("/api/logout", {
-    method: "POST"
-  });
-
-  window.location.href = "/login.html";
+  await fetch("/api/logout", { method:"POST" });
+  window.location.href="/login.html";
 }
 
 </script>
