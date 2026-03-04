@@ -1,4 +1,4 @@
-name: NPM Security Audit
+name: npm-audit
 
 on:
   push:
