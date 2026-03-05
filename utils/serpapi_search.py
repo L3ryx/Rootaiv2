@@ -1,36 +1,36 @@
-import requests
 import os
+import requests
 
-SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 
-def search_image(image_url):
+def search_aliexpress_images(file):
 
-    params = {
-        "engine": "google_reverse_image",
-        "image_url": image_url,
-        "api_key": SERPAPI_KEY
-    }
+    api_key = os.getenv("SERPAPI_KEY")
+
+    query = "aliexpress product"
 
     url = "https://serpapi.com/search"
 
-    r = requests.get(url, params=params)
+    params = {
+        "engine": "google_images",
+        "q": query,
+        "api_key": api_key
+    }
 
-    data = r.json()
+    response = requests.get(url, params=params)
+    results = response.json()
 
-    results = []
+    items = []
 
-    for item in data.get("image_results", []):
+    for item in results.get("images_results", [])[:10]:
 
         link = item.get("link", "")
 
-        if "aliexpress" in link.lower():
+        if "aliexpress" in link:
 
-            results.append({
-                "link": link,
+            items.append({
+                "title": item.get("title"),
+                "url": link,
                 "image": item.get("thumbnail")
             })
 
-        if len(results) >= 10:
-            break
-
-    return results
+    return items
