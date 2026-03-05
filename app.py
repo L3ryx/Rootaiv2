@@ -1,169 +1,119 @@
 import os
+import torch
 import requests
-from flask import Flask, render_template, request
+import numpy as np
+
+from flask import Flask, request, jsonify
 from PIL import Image
 from io import BytesIO
-import base64
+from scipy.spatial.distance import cosine
+from transformers import CLIPProcessor, CLIPModel
 
-# =========================
-# CONFIG
-# =========================
+# ==============================
+# Flask
+# ==============================
 
 app = Flask(__name__)
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-SERPAPI_KEY = os.getenv("SERPAPI_KEY")
-IMGBB_KEY = os.getenv("IMGBB_KEY")
+# ==============================
+# Load CLIP Model Once
+# ==============================
 
-# =========================
-# IMGBB UPLOAD
-# =========================
+model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
-def upload_to_imgbb(file):
-    url = "https://api.imgbb.com/1/upload"
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model.to(device)
 
-    encoded = base64.b64encode(file.read())
 
-    payload = {
-        "key": IMGBB_KEY,
-        "image": encoded
+# ==============================
+# Utils
+# ==============================
+
+def download_image(url):
+    r = requests.get(url)
+    img = Image.open(BytesIO(r.content)).convert("RGB")
+    return img
+
+
+def get_image_vector(image):
+    inputs = processor(images=image, return_tensors="pt").to(device)
+
+    with torch.no_grad():
+        embedding = model.get_image_features(**inputs)
+
+    embedding = embedding / embedding.norm(dim=-1, keepdim=True)
+    return embedding.cpu().numpy()[0]
+
+
+def get_text_vector(text):
+    inputs = processor(text=[text], return_tensors="pt").to(device)
+
+    with torch.no_grad():
+        embedding = model.get_text_features(**inputs)
+
+    embedding = embedding / embedding.norm(dim=-1, keepdim=True)
+    return embedding.cpu().numpy()[0]
+
+
+def compute_similarity(img_url_1, img_url_2, title):
+
+    img1 = download_image(img_url_1)
+    img2 = download_image(img_url_2)
+
+    vec_img1 = get_image_vector(img1)
+    vec_img2 = get_image_vector(img2)
+
+    image_similarity = 1 - cosine(vec_img1, vec_img2)
+    image_score = float(image_similarity * 100)
+
+    # Text similarity
+    vec_text = get_text_vector(title)
+    text_similarity = 1 - cosine(vec_img2, vec_text)
+    text_score = float(text_similarity * 100)
+
+    final_score = float((image_score * 0.7) + (text_score * 0.3))
+
+    return {
+        "image_score": round(image_score, 2),
+        "text_score": round(text_score, 2),
+        "final_score": round(final_score, 2)
     }
 
-    r = requests.post(url, data=payload)
-    data = r.json()
 
-    return data["data"]["url"]
+# ==============================
+# Routes
+# ==============================
 
-
-# =========================
-# GOOGLE REVERSE IMAGE
-# =========================
-
-def search_image(image_url):
-
-    url = "https://serpapi.com/search.json"
-
-    params = {
-        "engine": "google_reverse_image",
-        "image_url": image_url,
-        "api_key": SERPAPI_KEY
-    }
-
-    r = requests.get(url, params=params)
-    data = r.json()
-
-    results = []
-
-    for item in data.get("image_results", []):
-
-        link = item.get("link", "")
-
-        if "aliexpress" in link.lower():
-
-            results.append({
-                "link": link,
-                "image": item.get("thumbnail")
-            })
-
-        if len(results) >= 10:
-            break
-
-    return results
+@app.route("/")
+def home():
+    return jsonify({
+        "status": "API Running 🚀",
+        "endpoint": "/compare"
+    })
 
 
-# =========================
-# OPENAI IMAGE COMPARISON
-# =========================
+@app.route("/compare", methods=["POST"])
+def compare():
 
-def compare_images(img1_url, img2_url):
+    data = request.json
 
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    img_url_1 = data.get("image_query")
+    img_url_2 = data.get("image_product")
+    title = data.get("title")
 
-    prompt = """
-Compare ces deux images.
-Donne uniquement un score de similarité entre 0 et 100.
-Répond uniquement par un nombre.
-"""
+    if not img_url_1 or not img_url_2 or not title:
+        return jsonify({"error": "Missing parameters"}), 400
 
-    data = {
-        "model": "gpt-4o",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": img1_url}},
-                    {"type": "image_url", "image_url": {"url": img2_url}}
-                ]
-            }
-        ],
-        "max_tokens": 10
-    }
+    result = compute_similarity(img_url_1, img_url_2, title)
 
-    r = requests.post(
-        "https://api.openai.com/v1/chat/completions",
-        headers=headers,
-        json=data
-    )
-
-    try:
-        score = int(r.json()["choices"][0]["message"]["content"].strip())
-    except:
-        score = 0
-
-    return score
+    return jsonify(result)
 
 
-# =========================
-# ROUTE
-# =========================
-
-@app.route("/", methods=["GET", "POST"])
-def index():
-
-    results = []
-
-    if request.method == "POST":
-
-        file = request.files["image"]
-
-        if file:
-
-            # 1️⃣ Upload image to IMGBB
-            img_url = upload_to_imgbb(file)
-
-            # 2️⃣ Search Google Reverse Image
-            links = search_image(img_url)
-
-            # 3️⃣ Compare Images
-            for item in links:
-
-                score = compare_images(img_url, item["image"])
-
-                if score >= 70:
-
-                    results.append({
-                        "link": item["link"],
-                        "image": item["image"],
-                        "score": score
-                    })
-
-    return render_template("index.html", results=results)
-
-
-# =========================
-# RENDER PORT BINDING
-# =========================
+# ==============================
+# Run
+# ==============================
 
 if __name__ == "__main__":
-
     port = int(os.environ.get("PORT", 10000))
-
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False
-    )
+    app.run(host="0.0.0.0", port=port)
