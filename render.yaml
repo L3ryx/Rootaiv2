@@ -1,13 +1,27 @@
 services:
   - type: web
-    name: aliexpress-image-tool
-    env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python app.py"
+    name: rootaiv2
+    runtime: python
+    region: frankfurt   # 🔥 Change si tu veux (frankfurt / oregon / etc)
+
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt --no-cache-dir
+
+    startCommand: |
+      python app.py
+
     envVars:
-      - key: OPENAI_API_KEY
-        sync: false
+      - key: PORT
+        value: 10000
+
       - key: SERPAPI_KEY
         sync: false
+
       - key: IMGBB_KEY
         sync: false
+
+      - key: OPENAI_API_KEY
+        sync: false
+
+    autoDeploy: true
