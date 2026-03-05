@@ -1,26 +1,19 @@
 services:
   - type: web
     name: rootaiv2
-    runtime: python
-    region: oregon
+    env: python
+    region: oregon   # ou change selon ta région
+    plan: free
 
-    buildCommand: |
-      python -m pip install --upgrade pip
-      pip install -r requirements.txt
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
 
-    startCommand: |
-      python app.py
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
 
     envVars:
-      - key: PORT
-        value: 10000
-
       - key: SERPAPI_KEY
         sync: false
-
       - key: IMGBB_KEY
         sync: false
-
       - key: OPENAI_API_KEY
         sync: false
 
