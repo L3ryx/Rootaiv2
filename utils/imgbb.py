@@ -1,18 +1,23 @@
-import requests
-import base64
 import os
+import requests
 
-IMGBB_KEY = os.getenv("IMGBB_KEY")
 
-def upload_imgbb(file):
+def upload_to_imgbb(file):
+
+    api_key = os.getenv("IMGBB_KEY")
 
     url = "https://api.imgbb.com/1/upload"
 
     payload = {
-        "key": IMGBB_KEY,
-        "image": base64.b64encode(file.read())
+        "key": api_key
     }
 
-    r = requests.post(url, payload)
+    files = {
+        "image": file.read()
+    }
 
-    return r.json()["data"]["url"]
+    response = requests.post(url, data=payload, files={"image": files["image"]})
+
+    data = response.json()
+
+    return data["data"]["url"]
