@@ -1,36 +1,18 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>AliExpress Image Finder</title>
+    <title>RootAI V2</title>
 </head>
-
 <body>
 
-<h2>Upload Image</h2>
+<h1>🚀 RootAI V2</h1>
 
-<form method="POST" enctype="multipart/form-data">
-<input type="file" name="image">
-<button type="submit">Search</button>
+<h3>Upload une image produit</h3>
+
+<form action="/compare" method="post" enctype="multipart/form-data">
+    <input type="file" name="image" required>
+    <button type="submit">Comparer avec AliExpress</button>
 </form>
 
-<hr>
-
-{% for r in results %}
-
-<div>
-
-<img src="{{r.image}}" width="200">
-
-<p>Similarity: {{r.score}}%</p>
-
-<a href="{{r.link}}" target="_blank">Voir annonce AliExpress</a>
-
-</div>
-
-<hr>
-
-{% endfor %}
-
 </body>
-
 </html>
