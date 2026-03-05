@@ -4,5 +4,8 @@ pillow
 openai
 python-dotenv
 gunicorn
-numpy
-scikit-learn
+torch
+torchvision
+transformers
+timm
+opencv-python-headless
