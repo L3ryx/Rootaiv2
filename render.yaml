@@ -2,7 +2,7 @@ services:
   - type: web
     name: rootaiv2
     runtime: python
-    region: frankfurt   # 🔥 Change si tu veux (frankfurt / oregon / etc)
+    region: oregon   # 🔥 Change si tu veux (frankfurt / oregon / etc)
 
     buildCommand: |
       pip install --upgrade pip
