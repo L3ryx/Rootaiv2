@@ -1,21 +1,8 @@
-# ===== PYTHON WEB =====
-flask==3.1.3
-requests==2.32.3
-python-dotenv==1.0.1
-gunicorn==25.1.0
-
-# ===== IMAGE PROCESSING =====
-pillow==11.1.0
-opencv-python-headless==4.9.0.80
-numpy==2.0.2
-
-# ===== AI / VISION =====
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
-torchvision
-transformers==4.48.0
-sentencepiece
-timm
-
-# ===== UTILITIES =====
-tqdm
+flask
+requests
+pillow
+openai
+python-dotenv
+gunicorn
+numpy
+scikit-learn
