@@ -1,6 +1,6 @@
-flask
-requests
+torch
+torchvision
+transformers
 pillow
-openai
-python-dotenv
-gunicorn
+scipy
+requests
