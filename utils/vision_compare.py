@@ -1,52 +1,36 @@
-import torch
-import torchvision.transforms as transforms
-from PIL import Image
 import requests
-from io import BytesIO
+import os
+from openai import OpenAI
 
-model = None
-processor = None
-device = "cpu"
-
-
-# ==========================
-# LOAD MODEL LAZY
-# ==========================
-def load_model():
-    global model
-
-    if model is None:
-        from transformers import CLIPModel, CLIPProcessor
-
-        print("🚀 Loading CLIP model...")
-
-        model = CLIPModel.from_pretrained(
-            "openai/clip-vit-base-patch32"
-        ).to(device)
-
-        model.eval()
-
-        print("✅ Model loaded")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
-# ==========================
-# IMAGE TO EMBEDDING
-# ==========================
-def get_embedding(image_url):
+def compare_images(image_path):
+    """
+    Compare image uploadée avec description visuelle
+    """
 
-    load_model()
+    with open(image_path, "rb") as f:
+        image_data = f.read()
 
-    response = requests.get(image_url)
-    img = Image.open(BytesIO(response.content)).convert("RGB")
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text",
+                     "text": "Analyse cette image produit et décris le produit avec précision."},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/jpeg;base64," + image_data.hex()
+                        }
+                    }
+                ]
+            }
+        ],
+        max_tokens=300
+    )
 
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor()
-    ])
-
-    image_tensor = transform(img).unsqueeze(0)
-
-    with torch.no_grad():
-        embedding = model.get_image_features(image_tensor)
-
-    return embedding
+    return response.choices[0].message.content
