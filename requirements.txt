@@ -4,8 +4,4 @@ pillow
 openai
 python-dotenv
 gunicorn
-torch
-torchvision
-transformers
-timm
 opencv-python-headless
